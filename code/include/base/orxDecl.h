@@ -251,7 +251,7 @@
 
   #ifndef orxFASTCALL
 
-    #define orxFASTCALL         __fastcall
+    #define orxFASTCALL         __stdcall
 
   #endif /* !orxFASTCALL */
 
