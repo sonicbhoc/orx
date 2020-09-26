@@ -72,7 +72,7 @@ copybase = path.rebase ("..", os.getcwd (), os.getcwd () .. "/" .. destination)
 
 solution "[name]"
 
-    language ("C++")
+    language ("C[+c++ ++]")
 
     location (destination)
 
@@ -245,10 +245,24 @@ project "[name]"
 
     files
     {
-        "../src/**.cpp",
+[+c++
+        "../src/**.cpp",]
         "../src/**.c",
         "../include/**.h",
+[+scroll
+        "../include/**.inl",]
         "../data/config/**.ini"
+    }
+
+    includedirs
+    {
+[+scroll
+        "../include/Scroll",]
+[+imgui
+        "../include/imgui",]
+[+nuklear
+        "../include/nuklear",]
+        "../include"
     }
 
     configuration {"windows", "vs*"}
@@ -256,6 +270,8 @@ project "[name]"
 
     vpaths
     {
+[+scroll
+        ["inline"] = {"**.inl"},]
         ["config"] = {"**.ini"}
     }
 

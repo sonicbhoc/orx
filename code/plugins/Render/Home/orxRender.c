@@ -1746,7 +1746,7 @@ static orxINLINE void orxRender_Home_RenderViewport(const orxVIEWPORT *_pstViewp
           for(i = 0; i < u32TextureCount; i++)
           {
             /* Sets its clipping */
-            orxDisplay_SetBitmapClipping(apstBitmapList[i], orxF2U(orxMAX(stTextureBox.vTL.fX, stViewportBox.vTL.fX)), orxF2U(orxMAX(stTextureBox.vTL.fY, stViewportBox.vTL.fY)), orxF2U(orxMIN(stTextureBox.vBR.fX, stViewportBox.vBR.fX)), orxF2U(orxMIN(stTextureBox.vBR.fY, stViewportBox.vBR.fY)));
+            orxDisplay_SetBitmapClipping(apstBitmapList[i], orxF2U(orxMAX(stTextureBox.vTL.fX, stViewportBox.vTL.fX)), orxF2U(orxMAX(stTextureBox.vTL.fY, stViewportBox.vTL.fY)), orxF2U(orxCLAMP(stTextureBox.vBR.fX, orxFLOAT_0, stViewportBox.vBR.fX)), orxF2U(orxCLAMP(stTextureBox.vBR.fY, orxFLOAT_0, stViewportBox.vBR.fY)));
           }
 
           /* Does viewport have a background color? */
@@ -2931,7 +2931,7 @@ orxSTATUS orxFASTCALL orxRender_Home_Init()
       orxFLOAT fMinFrequency = orxFLOAT_0;
 
       /* Gets core clock */
-      sstRender.pstClock = orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE);
+      sstRender.pstClock = orxClock_Get(orxCLOCK_KZ_CORE);
 
       /* Pushes render config section clock */
       orxConfig_PushSection(orxRENDER_KZ_CONFIG_SECTION);

@@ -37,6 +37,7 @@
 #include "anim/orxAnim.h"
 #include "core/orxConsole.h"
 #include "core/orxEvent.h"
+#include "io/orxFile.h"
 #include "memory/orxMemory.h"
 #include "memory/orxBank.h"
 #include "object/orxTimeLine.h"
@@ -1060,12 +1061,12 @@ static orxCOMMAND_VAR *orxFASTCALL orxCommand_Process(const orxSTRING _zCommandL
         if(eStatus == orxSTATUS_FAILURE)
         {
           /* Logs message */
-          orxDEBUG_PRINT(orxDEBUG_LEVEL_SYSTEM, "Can't evaluate command line [%s], invalid argument #%d.", _zCommandLine, u32ArgNumber);
+          orxDEBUG_PRINT(orxDEBUG_LEVEL_SYSTEM, "Can't evaluate command line [%s], invalid argument #%d for command [%s].", _zCommandLine, u32ArgNumber, orxString_GetFromID(pstCommand->stNameID));
         }
         else
         {
           /* Logs message */
-          orxDEBUG_PRINT(orxDEBUG_LEVEL_SYSTEM, "Can't evaluate command line [%s], expected %d[+%d] arguments, found %d.", _zCommandLine, (orxU32)pstCommand->u16RequiredParamNumber, (orxU32)pstCommand->u16OptionalParamNumber, u32ArgNumber);
+          orxDEBUG_PRINT(orxDEBUG_LEVEL_SYSTEM, "Can't evaluate command line [%s], expected %d[+%d] arguments for command [%s], found %d.", _zCommandLine, (orxU32)pstCommand->u16RequiredParamNumber, (orxU32)pstCommand->u16OptionalParamNumber, orxString_GetFromID(pstCommand->stNameID), u32ArgNumber);
         }
       }
       else
@@ -1992,6 +1993,26 @@ void orxFASTCALL orxCommand_CommandNormalize(orxU32 _u32ArgNumber, const orxCOMM
   return;
 }
 
+/* Command: ToSpherical */
+void orxFASTCALL orxCommand_CommandToSpherical(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  /* Updates result */
+  orxVector_FromCartesianToSpherical(&(_pstResult->vValue), &(_astArgList[0].vValue));
+
+  /* Done! */
+  return;
+}
+
+/* Command: ToCartesian */
+void orxFASTCALL orxCommand_CommandToCartesian(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  /* Updates result */
+  orxVector_FromSphericalToCartesian(&(_pstResult->vValue), &(_astArgList[0].vValue));
+
+  /* Done! */
+  return;
+}
+
 /* Command: VectorX */
 void orxFASTCALL orxCommand_CommandVectorX(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
 {
@@ -2296,6 +2317,28 @@ void orxFASTCALL orxCommand_CommandVersion(orxU32 _u32ArgNumber, const orxCOMMAN
   return;
 }
 
+/** Command: GetHomeDirectory
+ */
+void orxFASTCALL orxCommand_CommandGetHomeDirectory(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  /* Updates result */
+  _pstResult->zValue = orxFile_GetHomeDirectory((_u32ArgNumber > 0) ? _astArgList[0].zValue : orxSTRING_EMPTY);
+
+  /* Done! */
+  return;
+}
+
+/** Command: GetApplicationSaveDirectory
+ */
+void orxFASTCALL orxCommand_CommandGetApplicationSaveDirectory(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  /* Updates result */
+  _pstResult->zValue = orxFile_GetApplicationSaveDirectory((_u32ArgNumber > 0) ? _astArgList[0].zValue : orxSTRING_EMPTY);
+
+  /* Done! */
+  return;
+}
+
 /** Command: LogAllStructures
  */
 void orxFASTCALL orxCommand_CommandLogAllStructures(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
@@ -2394,6 +2437,11 @@ static orxINLINE void orxCommand_RegisterCommands()
   /* Command: Normalize */
   orxCOMMAND_REGISTER_CORE_COMMAND(Command, Normalize, "Result", orxCOMMAND_VAR_TYPE_VECTOR, 1, 0, {"Operand", orxCOMMAND_VAR_TYPE_VECTOR});
 
+  /* Command: ToSpherical */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Command, ToSpherical, "Result", orxCOMMAND_VAR_TYPE_VECTOR, 1, 0, {"Operand", orxCOMMAND_VAR_TYPE_VECTOR});
+  /* Command: ToCartesian */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Command, ToCartesian, "Result", orxCOMMAND_VAR_TYPE_VECTOR, 1, 0, {"Operand", orxCOMMAND_VAR_TYPE_VECTOR});
+
   /* Command: VectorX */
   orxCOMMAND_REGISTER_CORE_COMMAND(Command, VectorX, "Result", orxCOMMAND_VAR_TYPE_FLOAT, 1, 0, {"Operand", orxCOMMAND_VAR_TYPE_VECTOR});
   /* Command: VectorY */
@@ -2419,6 +2467,11 @@ static orxINLINE void orxCommand_RegisterCommands()
 
   /* Command: Version */
   orxCOMMAND_REGISTER_CORE_COMMAND(Command, Version, "String", orxCOMMAND_VAR_TYPE_STRING, 0, 1, {"Type = full [minor|major|build|release|numeric|full]", orxCOMMAND_VAR_TYPE_STRING});
+
+  /* Command: GetHomeDirectory */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Command, GetHomeDirectory, "Result", orxCOMMAND_VAR_TYPE_STRING, 0, 1, {"SubPath = <void>", orxCOMMAND_VAR_TYPE_STRING});
+  /* Command: GetApplicationSaveDirectory */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Command, GetApplicationSaveDirectory, "Result", orxCOMMAND_VAR_TYPE_STRING, 0, 1, {"SubPath = <void>", orxCOMMAND_VAR_TYPE_STRING});
 
   /* Command: LogAllStructures */
   orxCOMMAND_REGISTER_CORE_COMMAND(Command, LogAllStructures, "Success?", orxCOMMAND_VAR_TYPE_BOOL, 0, 0);
@@ -2506,6 +2559,16 @@ static orxINLINE void orxCommand_RegisterCommands()
   /* Alias: Normalize */
   orxCommand_AddAlias("Normalize", "Vector.Normalize", orxNULL);
 
+  /* Alias: Vector.ToSpherical */
+  orxCommand_AddAlias("Vector.ToSpherical", "Command.ToSpherical", orxNULL);
+  /* Alias: Vector.ToCartesian */
+  orxCommand_AddAlias("Vector.ToCartesian", "Command.ToCartesian", orxNULL);
+
+  /* Alias: ToSpherical */
+  orxCommand_AddAlias("ToSpherical", "Vector.ToSpherical", orxNULL);
+  /* Alias: ToCartesian */
+  orxCommand_AddAlias("ToCartesian", "Vector.ToCartesian", orxNULL);
+
   /* Alias: Vector.X */
   orxCommand_AddAlias("Vector.X", "Command.VectorX", orxNULL);
   /* Alias: Vector.Y */
@@ -2539,6 +2602,11 @@ static orxINLINE void orxCommand_RegisterCommands()
 
   /* Alias: Version */
   orxCommand_AddAlias("Version", "Command.Version", orxNULL);
+
+  /* Alias: File.GetHomeDirectory */
+  orxCommand_AddAlias("File.GetHomeDirectory", "Command.GetHomeDirectory", orxNULL);
+  /* Alias: File.GetApplicationSaveDirectory */
+  orxCommand_AddAlias("File.GetApplicationSaveDirectory", "Command.GetApplicationSaveDirectory", orxNULL);
 
   /* Alias: Structure.LogAll */
   orxCommand_AddAlias("Structure.LogAll", "Command.LogAllStructures", orxNULL);
@@ -2634,6 +2702,16 @@ static orxINLINE void orxCommand_UnregisterCommands()
   /* Alias: Normalize */
   orxCommand_RemoveAlias("Normalize");
 
+  /* Alias: Vector.ToSpherical */
+  orxCommand_RemoveAlias("Vector.ToSpherical");
+  /* Alias: Vector.ToCartesian */
+  orxCommand_RemoveAlias("Vector.ToCartesian");
+
+  /* Alias: ToSpherical */
+  orxCommand_RemoveAlias("ToSpherical");
+  /* Alias: ToCartesian */
+  orxCommand_RemoveAlias("ToCartesian");
+
   /* Alias: Vector.X */
   orxCommand_RemoveAlias("Vector.X");
   /* Alias: Vector.Y */
@@ -2666,6 +2744,11 @@ static orxINLINE void orxCommand_UnregisterCommands()
 
   /* Alias: Version */
   orxCommand_RemoveAlias("Version");
+
+  /* Alias: File.GetHomeDirectory */
+  orxCommand_RemoveAlias("File.GetHomeDirectory");
+  /* Alias: File.GetApplicationSaveDirectory */
+  orxCommand_RemoveAlias("File.GetApplicationSaveDirectory");
 
   /* Alias: Structure.LogAll */
   orxCommand_RemoveAlias("Structure.LogAll");
@@ -2731,6 +2814,11 @@ static orxINLINE void orxCommand_UnregisterCommands()
   /* Command: Normalize */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, Normalize);
 
+  /* Command: ToSpherical */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, ToSpherical);
+  /* Command: ToCartesian */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, ToCartesian);
+
   /* Command: VectorX */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, VectorX);
   /* Command: VectorY */
@@ -2757,6 +2845,11 @@ static orxINLINE void orxCommand_UnregisterCommands()
   /* Command: Version */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, Version);
 
+  /* Command: GetHomeDirectory */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, GetHomeDirectory);
+  /* Command: GetApplicationSaveDirectory */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, GetApplicationSaveDirectory);
+
   /* Command: LogAllStructures */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Command, LogAllStructures);
 
@@ -2782,6 +2875,7 @@ void orxFASTCALL orxCommand_Setup()
   orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_BANK);
   orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_STRING);
   orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_EVENT);
+  orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_FILE);
   orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_SYSTEM);
   orxModule_AddDependency(orxMODULE_ID_COMMAND, orxMODULE_ID_PROFILER);
 

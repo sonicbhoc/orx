@@ -111,6 +111,7 @@
 #define orxCONFIG_KC_SECTION_SEPARATOR            '.'         /**< Section separator */
 #define orxCONFIG_KC_INHERITANCE_MARKER           '@'         /**< Inheritance marker character */
 #define orxCONFIG_KC_BLOCK                        '"'         /**< Block delimiter character */
+#define orxCONFIG_KZ_BLOCK                        "\""        /**< Block delimiter string */
 
 #define orxCONFIG_KZ_CONFIG_SECTION               "Config"    /**< Config section name */
 #define orxCONFIG_KZ_CONFIG_DEFAULT_PARENT        "DefaultParent" /**< Default parent for sections */
@@ -1464,6 +1465,16 @@ static orxINLINE orxCONFIG_SECTION *orxConfig_CreateSection(const orxSTRING _zSe
 
     /* Clears its protection count */
     pstSection->s32ProtectionCount = 0;
+
+    /* Has parent? */
+    if((_pstParent != orxNULL) && (_pstParent != orxHANDLE_UNDEFINED))
+    {
+      /* Protects it */
+      _pstParent->s32ProtectionCount++;
+
+      /* Checks */
+      orxASSERT(_pstParent->s32ProtectionCount >= 0);
+    }
   }
 
   /* Done! */
@@ -3097,7 +3108,6 @@ static orxSTATUS orxConfig_SelectSectionInternal(const orxSTRING _zSectionName)
     const orxSTRING     zSectionName;
     orxCONFIG_SECTION  *pstSection, *pstParent = orxNULL;
     orxCHAR            *pcNameEnd;
-    orxBOOL             bNewParent = orxFALSE;
     orxS32              s32MarkerIndex;
 
     /* Looks for inheritance index */
@@ -3128,9 +3138,6 @@ static orxSTATUS orxConfig_SelectSectionInternal(const orxSTRING _zSectionName)
       {
         /* Forces 'no default' parent ID */
         pstParent = (orxCONFIG_SECTION *)orxHANDLE_UNDEFINED;
-
-        /* Asks for new parent to be set */
-        bNewParent = orxTRUE;
       }
       else
       {
@@ -3146,17 +3153,8 @@ static orxSTATUS orxConfig_SelectSectionInternal(const orxSTRING _zSectionName)
         /* Selects it */
         if(orxConfig_SelectSectionInternal(zParent) != orxSTATUS_FAILURE)
         {
-          /* Protects it */
-          sstConfig.pstCurrentSection->s32ProtectionCount++;
-
-          /* Checks */
-          orxASSERT(sstConfig.pstCurrentSection->s32ProtectionCount >= 0);
-
           /* Stores it */
           pstParent = sstConfig.pstCurrentSection;
-
-          /* Asks for new parent to be set */
-          bNewParent = orxTRUE;
         }
 
         /* Restores previous section */
@@ -3218,9 +3216,29 @@ static orxSTATUS orxConfig_SelectSectionInternal(const orxSTRING _zSectionName)
       /* Loading? */
       if(sstConfig.u32LoadCount != 0)
       {
-        /* Has new parent ID? */
-        if(bNewParent != orxFALSE)
+        /* Should update parent? */
+        if((pstParent != orxNULL) && (pstParent != pstSection->pstParent))
         {
+          /* Had previous parent? */
+          if((pstSection->pstParent != orxNULL) && (pstSection->pstParent != orxHANDLE_UNDEFINED))
+          {
+            /* Unprotects it */
+            pstSection->pstParent->s32ProtectionCount--;
+
+            /* Checks */
+            orxASSERT(pstSection->pstParent->s32ProtectionCount >= 0);
+          }
+
+          /* Has new parent? */
+          if(pstParent != orxHANDLE_UNDEFINED)
+          {
+            /* Protects it */
+            pstParent->s32ProtectionCount++;
+
+            /* Checks */
+            orxASSERT(pstParent->s32ProtectionCount >= 0);
+          }
+
           /* Updates parent ID */
           pstSection->pstParent = pstParent;
         }
@@ -4522,12 +4540,6 @@ orxSTATUS orxFASTCALL orxConfig_ReloadHistory()
     /* Clears all data */
     orxConfig_Clear(orxNULL);
 
-    /* Reloads default file */
-    eResult = orxConfig_Load(sstConfig.zBaseFile);
-
-    /* Logs */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_CONFIG, "[%s]: Config file has been reloaded", sstConfig.zBaseFile);
-
     /* For all entries in history */
     for(pu32HistoryEntry = (orxU32 *)orxBank_GetNext(sstConfig.pstHistoryBank, orxNULL);
         (pu32HistoryEntry != orxNULL) && (eResult != orxSTATUS_FAILURE);
@@ -4678,7 +4690,7 @@ orxSTATUS orxFASTCALL orxConfig_Save(const orxSTRING _zFileName, orxBOOL _bUseEn
               if(!orxFLAG_TEST(pstEntry->stValue.u16Flags, orxCONFIG_VALUE_KU16_FLAG_BLOCK_MODE))
               {
                 /* Writes it */
-                u32BufferSize = (orxU32)orxString_NPrint(acBuffer, orxCONFIG_KU32_BUFFER_SIZE - 1, "%s %c %s", zKey, orxCONFIG_KC_ASSIGN, pstEntry->stValue.zValue);
+                u32BufferSize = (orxU32)orxString_NPrint(acBuffer, orxCONFIG_KU32_BUFFER_SIZE - 1, "%s %c %s%s", zKey, orxCONFIG_KC_ASSIGN, *(pstEntry->stValue.zValue) == orxCONFIG_KC_BLOCK ? orxCONFIG_KZ_BLOCK : orxSTRING_EMPTY, pstEntry->stValue.zValue);
 
                 /* Is a list? */
                 if(orxFLAG_TEST(pstEntry->stValue.u16Flags, orxCONFIG_VALUE_KU16_FLAG_LIST))
@@ -5435,21 +5447,8 @@ orxBOOL orxFASTCALL orxConfig_HasSection(const orxSTRING _zSectionName)
   /* Valid? */
   if(_zSectionName != orxSTRING_EMPTY)
   {
-    orxSTRINGID         stID;
-    orxCONFIG_SECTION  *pstSection;
-
-    /* Gets section name ID */
-    stID = orxString_ToCRC(_zSectionName);
-
-    /* Gets it from table */
-    pstSection = (orxCONFIG_SECTION *)orxHashTable_Get(sstConfig.pstSectionTable, stID);
-
-    /* Valid? */
-    if(pstSection != orxNULL)
-    {
-      /* Updates result */
-      bResult = orxTRUE;
-    }
+    /* Updates result */
+    bResult = (orxHashTable_Get(sstConfig.pstSectionTable, orxString_ToCRC(_zSectionName)) != orxNULL) ? orxTRUE : orxFALSE;
   }
 
   /* Done! */
@@ -5609,27 +5608,38 @@ const orxSTRING orxFASTCALL orxConfig_GetSection(orxU32 _u32SectionIndex)
  */
 orxSTATUS orxFASTCALL orxConfig_Clear(const orxCONFIG_CLEAR_FUNCTION _pfnClearCallback)
 {
-  orxCONFIG_SECTION *pstLastSection, *pstNewSection;
+  orxCONFIG_SECTION  *pstLastSection, *pstNewSection;
+  orxBOOL             bStop;
 
   /* Checks */
   orxASSERT(orxFLAG_TEST(sstConfig.u32Flags, orxCONFIG_KU32_STATIC_FLAG_READY));
 
-  /* For all sections */
-  for(pstLastSection = orxNULL, pstNewSection = (orxCONFIG_SECTION *)orxLinkList_GetFirst(&(sstConfig.stSectionList));
-      pstNewSection != orxNULL;
-      pstNewSection = (pstLastSection != orxNULL) ? (orxCONFIG_SECTION *)orxLinkList_GetNext(&(pstLastSection->stNode)) : (orxCONFIG_SECTION *)orxLinkList_GetFirst(&(sstConfig.stSectionList)))
+  /* Until there's no more pending deletions */
+  do
   {
-    /* Checks */
-    orxASSERT(pstNewSection->s32ProtectionCount >= 0);
+    /* Inits status */
+    bStop = orxTRUE;
 
-    /* Protected or can't delete section? */
-    if((pstNewSection->s32ProtectionCount > 0)
-    || (orxConfig_DeleteSection(pstNewSection, _pfnClearCallback) == orxSTATUS_FAILURE))
+    /* For all sections */
+    for(pstLastSection = orxNULL, pstNewSection = (orxCONFIG_SECTION *)orxLinkList_GetFirst(&(sstConfig.stSectionList));
+        pstNewSection != orxNULL;
+        pstNewSection = (pstLastSection != orxNULL) ? (orxCONFIG_SECTION *)orxLinkList_GetNext(&(pstLastSection->stNode)) : (orxCONFIG_SECTION *)orxLinkList_GetFirst(&(sstConfig.stSectionList)))
     {
-      /* Updates last section */
-      pstLastSection = pstNewSection;
+      /* Checks */
+      orxASSERT(pstNewSection->s32ProtectionCount >= 0);
+
+      /* Protected or can't delete section? */
+      if((pstNewSection->s32ProtectionCount > 0)
+      || (orxConfig_DeleteSection(pstNewSection, _pfnClearCallback) == orxSTATUS_FAILURE))
+      {
+        /* Updates last section */
+        pstLastSection = pstNewSection;
+
+        /* Updates status */
+        bStop = orxFALSE;
+      }
     }
-  }
+  } while(bStop == orxFALSE);
 
   /* Done! */
   return orxSTATUS_SUCCESS;
@@ -5891,15 +5901,18 @@ orxBOOL orxFASTCALL orxConfig_IsCommandValue(const orxSTRING _zKey)
  */
 orxBOOL orxFASTCALL orxConfig_HasValue(const orxSTRING _zKey)
 {
-  orxBOOL bResult;
+  orxBOOL bResult = orxFALSE;
 
   /* Checks */
   orxASSERT(orxFLAG_TEST(sstConfig.u32Flags, orxCONFIG_KU32_STATIC_FLAG_READY));
   orxASSERT(_zKey != orxNULL);
-  orxASSERT(_zKey != orxSTRING_EMPTY);
 
-  /* Updates result */
-  bResult = (orxConfig_GetValue(_zKey) != orxNULL) ? orxTRUE : orxFALSE;
+  /* Valid? */
+  if(_zKey != orxSTRING_EMPTY)
+  {
+    /* Updates result */
+    bResult = (orxConfig_GetValue(_zKey) != orxNULL) ? orxTRUE : orxFALSE;
+  }
 
   /* Done! */
   return bResult;

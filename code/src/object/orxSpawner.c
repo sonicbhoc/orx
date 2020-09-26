@@ -93,6 +93,12 @@
 #define orxSPAWNER_KZ_CONFIG_IMMEDIATE            "Immediate"
 #define orxSPAWNER_KZ_CONFIG_IGNORE_FROM_PARENT   "IgnoreFromParent"
 
+
+#define orxSPAWNER_KZ_BOTH                        "both"
+#define orxSPAWNER_KZ_OBJECT                      "object"
+#define orxSPAWNER_KZ_SPAWNER                     "spawner"
+
+
 #define orxSPAWNER_KU32_BANK_SIZE                 128         /**< Bank size */
 
 
@@ -285,11 +291,48 @@ static orxSTATUS orxFASTCALL orxSpawner_ProcessConfigData(orxSPAWNER *_pstSpawne
     /* Has speed? */
     if(orxConfig_GetVector(orxSPAWNER_KZ_CONFIG_OBJECT_SPEED, &(_pstSpawner->vSpeed)) != orxNULL)
     {
-      /* Use relative speed? */
-      if(orxConfig_GetBool(orxSPAWNER_KZ_CONFIG_USE_RELATIVE_SPEED) != orxFALSE)
+      const orxSTRING zUseRelativeSpeed;
+
+      /* Gets its literal version */
+      zUseRelativeSpeed = orxConfig_GetString(orxSPAWNER_KZ_CONFIG_USE_RELATIVE_SPEED);
+
+      /* Defined? */
+      if((zUseRelativeSpeed != orxNULL) && (zUseRelativeSpeed != orxSTRING_EMPTY))
       {
-        /* Updates status */
-        orxStructure_SetFlags(_pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED | orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED, orxSPAWNER_KU32_FLAG_NONE);
+        /* Spawner only? */
+        if(orxString_ICompare(zUseRelativeSpeed, orxSPAWNER_KZ_SPAWNER) == 0)
+        {
+          /* Updates status */
+          orxStructure_SetFlags(_pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED | orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED_SPAWNER, orxSPAWNER_KU32_FLAG_NONE);
+        }
+        /* Object only? */
+        else if(orxString_ICompare(zUseRelativeSpeed, orxSPAWNER_KZ_OBJECT) == 0)
+        {
+          /* Updates status */
+          orxStructure_SetFlags(_pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED | orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED_OBJECT, orxSPAWNER_KU32_FLAG_NONE);
+        }
+        /* Both? */
+        else if(orxString_ICompare(zUseRelativeSpeed, orxSPAWNER_KZ_BOTH) == 0)
+        {
+          /* Updates status */
+          orxStructure_SetFlags(_pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED | orxSPAWNER_KU32_MASK_USE_RELATIVE_SPEED, orxSPAWNER_KU32_FLAG_NONE);
+        }
+        else
+        {
+          orxBOOL bUseRelativeSpeed;
+
+          /* Gets boolean value */
+          if(orxString_ToBool(zUseRelativeSpeed, &bUseRelativeSpeed, orxNULL) != orxSTATUS_FAILURE)
+          {
+            /* Updates status */
+            orxStructure_SetFlags(_pstSpawner, (bUseRelativeSpeed != orxFALSE) ? orxSPAWNER_KU32_FLAG_OBJECT_SPEED | orxSPAWNER_KU32_MASK_USE_RELATIVE_SPEED : orxSPAWNER_KU32_FLAG_OBJECT_SPEED, orxSPAWNER_KU32_FLAG_NONE);
+          }
+          else
+          {
+            /* Updates status */
+            orxStructure_SetFlags(_pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED, orxSPAWNER_KU32_FLAG_NONE);
+          }
+        }
       }
       else
       {
@@ -365,7 +408,7 @@ static orxSTATUS orxFASTCALL orxSpawner_ProcessConfigData(orxSPAWNER *_pstSpawne
     if((zIgnoreFromParent = orxConfig_GetString(orxSPAWNER_KZ_CONFIG_IGNORE_FROM_PARENT)) != orxSTRING_EMPTY)
     {
       /* Updates frame */
-      orxStructure_SetFlags(_pstSpawner->pstFrame, orxFrame_GetIgnoreFlags(zIgnoreFromParent), orxFRAME_KU32_MASK_IGNORE_ALL);
+      orxStructure_SetFlags(_pstSpawner->pstFrame, orxFrame_GetIgnoreFlagValues(zIgnoreFromParent), orxFRAME_KU32_MASK_IGNORE_ALL);
     }
 
     /* Updates result */
@@ -635,6 +678,9 @@ static orxSTATUS orxFASTCALL orxSpawner_EventHandler(const orxEVENT *_pstEvent)
             /* Decreases its active objects count */
             pstSpawner->u32ActiveObjectCount--;
 
+            /* Removes self as object's owner */
+            orxObject_SetOwner(pstObject, orxNULL);
+
             break;
           }
 
@@ -646,9 +692,10 @@ static orxSTATUS orxFASTCALL orxSpawner_EventHandler(const orxEVENT *_pstEvent)
           /* Has current spawner and is pending object? */
           if((sstSpawner.pstCurrentSpawner != orxNULL) && (sstSpawner.pstCurrentSpawner->pstPendingObject == (orxOBJECT *)_pstEvent->hSender))
           {
-            orxVECTOR vPosition, vScale;
+            orxVECTOR   vPosition, vScale, vCombinedScale;
             orxSPAWNER *pstSpawner;
             orxOBJECT  *pstObject, *pstOwner;
+            orxFLOAT    fRotation, fCombinedRotation;
 
             /* Gets current spawner and object */
             pstSpawner  = sstSpawner.pstCurrentSpawner;
@@ -673,15 +720,30 @@ static orxSTATUS orxFASTCALL orxSpawner_EventHandler(const orxEVENT *_pstEvent)
             /* Should update rotation? */
             if(orxStructure_TestFlags(pstSpawner, orxSPAWNER_KU32_FLAG_USE_ROTATION))
             {
+              /* Updates rotations */
+              fRotation         = orxObject_GetRotation(pstObject);
+              fCombinedRotation = fRotation + pstSpawner->fPendingRotation;
+
               /* Updates object rotation */
-              orxObject_SetRotation(pstObject, orxObject_GetRotation(pstObject) + pstSpawner->fPendingRotation);
+              orxObject_SetRotation(pstObject, fCombinedRotation);
+            }
+            else
+            {
+              /* Gets rotation */
+              fRotation         = orxFLOAT_0;
+              fCombinedRotation = pstSpawner->fPendingRotation;
             }
 
             /* Should update scale? */
             if(orxStructure_TestFlags(pstSpawner, orxSPAWNER_KU32_FLAG_USE_SCALE))
             {
-              /* Updates object scale */
-              orxObject_SetScale(pstObject, orxVector_Mul(&vScale, orxObject_GetScale(pstObject, &vScale), pstSpawner->pvPendingScale));
+              /* Updates scales */
+              orxObject_SetScale(pstObject, orxVector_Mul(&vCombinedScale, orxObject_GetScale(pstObject, &vScale), pstSpawner->pvPendingScale));
+            }
+            else
+            {
+              /* Gets scale */
+              orxVector_Copy(&vCombinedScale, pstSpawner->pvPendingScale);
             }
 
             /* Not using self as parent? */
@@ -694,6 +756,8 @@ static orxSTATUS orxFASTCALL orxSpawner_EventHandler(const orxEVENT *_pstEvent)
             /* Should apply speed? */
             if(orxStructure_TestFlags(pstSpawner, orxSPAWNER_KU32_FLAG_OBJECT_SPEED))
             {
+              orxVECTOR vSpeed;
+
               /* Use random speed? */
               if(orxStructure_TestFlags(pstSpawner, orxSPAWNER_KU32_FLAG_RANDOM_OBJECT_SPEED))
               {
@@ -703,19 +767,40 @@ static orxSTATUS orxFASTCALL orxSpawner_EventHandler(const orxEVENT *_pstEvent)
                 orxConfig_PopSection();
               }
 
-              /* Use relative speed? */
-              if(orxStructure_TestFlags(pstSpawner, orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED))
+              /* Depending on relative speed mode */
+              switch(orxStructure_GetFlags(pstSpawner, orxSPAWNER_KU32_MASK_USE_RELATIVE_SPEED))
               {
-                orxVECTOR vSpeed;
+                case orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED_OBJECT:
+                {
+                  /* Applies relative speed (object) */
+                  orxVector_Mul(&vSpeed, orxVector_2DRotate(&vSpeed, &(pstSpawner->vSpeed), fRotation), &vScale);
+                  orxObject_SetSpeed(pstObject, &vSpeed);
+                  break;
+                }
 
-                /* Applies relative speed */
-                orxVector_Mul(&vSpeed, orxVector_2DRotate(&vSpeed, &(pstSpawner->vSpeed), pstSpawner->fPendingRotation), pstSpawner->pvPendingScale);
-                orxObject_SetSpeed(pstObject, &vSpeed);
-              }
-              else
-              {
-                /* Applies speed */
-                orxObject_SetSpeed(pstObject, &(pstSpawner->vSpeed));
+                case orxSPAWNER_KU32_FLAG_USE_RELATIVE_SPEED_SPAWNER:
+                {
+                  /* Applies relative speed (spawner) */
+                  orxVector_Mul(&vSpeed, orxVector_2DRotate(&vSpeed, &(pstSpawner->vSpeed), pstSpawner->fPendingRotation), pstSpawner->pvPendingScale);
+                  orxObject_SetSpeed(pstObject, &vSpeed);
+                  break;
+                }
+
+                case orxSPAWNER_KU32_MASK_USE_RELATIVE_SPEED:
+                {
+                  /* Applies relative speed (both) */
+                  orxVector_Mul(&vSpeed, orxVector_2DRotate(&vSpeed, &(pstSpawner->vSpeed), fCombinedRotation), &vCombinedScale);
+                  orxObject_SetSpeed(pstObject, &vSpeed);
+                  break;
+                }
+
+                default:
+                {
+                  /* Applies speed */
+                  orxObject_SetSpeed(pstObject, &(pstSpawner->vSpeed));
+
+                  break;
+                }
               }
             }
 

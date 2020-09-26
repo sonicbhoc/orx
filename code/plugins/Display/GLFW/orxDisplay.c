@@ -140,8 +140,8 @@
 #define orxDISPLAY_KU32_BITMAP_BANK_SIZE        256
 #define orxDISPLAY_KU32_SHADER_BANK_SIZE        64
 
-#define orxDISPLAY_KU32_VERTEX_BUFFER_SIZE      (4 * 16384) /**< 16384 items batch capacity */
-#define orxDISPLAY_KU32_INDEX_BUFFER_SIZE       (6 * 16384) /**< 16384 items batch capacity */
+#define orxDISPLAY_KU32_VERTEX_BUFFER_SIZE      (4 * 2048) /**< 2048 items batch capacity */
+#define orxDISPLAY_KU32_INDEX_BUFFER_SIZE       (6 * 2048) /**< 2048 items batch capacity */
 #define orxDISPLAY_KU32_SHADER_BUFFER_SIZE      131072
 
 #define orxDISPLAY_KF_BORDER_FIX                0.1f
@@ -341,8 +341,8 @@ typedef struct __orxDISPLAY_STATIC_t
   GLFWcursor               *pstCursor;
   orxBITMAP                *pstScreen;
   const orxBITMAP          *pstTempBitmap;
-  orxVECTOR                 vWindowPosition;
   orxVECTOR                 vContentScale;
+  orxVECTOR                 vWindowPosition;
   GLFWimage                 astIconList[orxDISPLAY_KU32_MAX_ICON_NUMBER];
   orxS32                    s32IconNumber, s32PendingIconCount;
   orxRGBA                   stLastColor;
@@ -771,6 +771,35 @@ static void orxDisplay_GLFW_PosCallback(GLFWwindow *_pstWindow, int _iX, int _iY
   return;
 }
 
+static void orxDisplay_GLFW_ContentScaleCallback(GLFWwindow *_pstWindow, float _fScaleX, float _fScaleY)
+{
+  /* Not ignoring event? */
+  if(!orxFLAG_TEST(sstDisplay.u32Flags, orxDISPLAY_KU32_STATIC_FLAG_IGNORE_EVENT))
+  {
+    orxDISPLAY_VIDEO_MODE stVideoMode;
+    int                   iWindowX = 0, iWindowY = 0;
+
+    /* Gets window position */
+    glfwGetWindowPos(_pstWindow, &iWindowX, &iWindowY);
+
+    /* Forces a position update to prevent window from going back to its previous monitor */
+    orxDisplay_GLFW_PosCallback(_pstWindow, iWindowX, iWindowY);
+
+    /* Retrieves current video mode */
+    stVideoMode.u32Width        = orxF2U(sstDisplay.pstScreen->fWidth);
+    stVideoMode.u32Height       = orxF2U(sstDisplay.pstScreen->fHeight);
+    stVideoMode.u32Depth        = sstDisplay.u32Depth;
+    stVideoMode.u32RefreshRate  = sstDisplay.u32RefreshRate;
+    stVideoMode.bFullScreen     = orxFLAG_TEST(sstDisplay.u32Flags, orxDISPLAY_KU32_STATIC_FLAG_FULLSCREEN) ? orxTRUE : orxFALSE;
+
+    /* Applies it */
+    orxDisplay_GLFW_SetVideoMode(&stVideoMode);
+  }
+
+  /* Done! */
+  return;
+}
+
 static void orxFASTCALL orxDisplay_GLFW_Update(const orxCLOCK_INFO *_pstClockInfo, void *_pContext)
 {
   /* Profiles */
@@ -791,7 +820,7 @@ static void orxFASTCALL orxDisplay_GLFW_Update(const orxCLOCK_INFO *_pstClockInf
           orxCLOCK *pstClock;
 
           /* Gets core clock */
-          pstClock = orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE);
+          pstClock = orxClock_Get(orxCLOCK_KZ_CORE);
 
           /* Valid? */
           if(pstClock != orxNULL)
@@ -833,7 +862,7 @@ static void orxFASTCALL orxDisplay_GLFW_Update(const orxCLOCK_INFO *_pstClockInf
             orxCLOCK *pstClock;
 
             /* Gets core clock */
-            pstClock = orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE);
+            pstClock = orxClock_Get(orxCLOCK_KZ_CORE);
 
             /* Valid? */
             if(pstClock != orxNULL)
@@ -1397,9 +1426,6 @@ static orxSTATUS orxFASTCALL orxDisplay_GLFW_DecompressBitmapCallback(void *_pCo
       stPayload.stBitmap.stFilenameID   = pstInfo->pstBitmap->stFilenameID;
       stPayload.stBitmap.u32ID          = (pstInfo->pu8ImageBuffer != orxNULL) ? (orxU32)pstInfo->pstBitmap->uiTexture : orxU32_UNDEFINED;
 
-      /* Sends event */
-      orxEVENT_SEND(orxEVENT_TYPE_DISPLAY, orxDISPLAY_EVENT_LOAD_BITMAP, pstInfo->pstBitmap, orxNULL, &stPayload);
-
       /* Frees image buffer */
       if(pstInfo->pu8ImageBuffer != pstInfo->pu8ImageSource)
       {
@@ -1417,6 +1443,9 @@ static orxSTATUS orxFASTCALL orxDisplay_GLFW_DecompressBitmapCallback(void *_pCo
       /* Clears loading flag */
       orxFLAG_SET(pstInfo->pstBitmap->u32Flags, orxDISPLAY_KU32_BITMAP_FLAG_NONE, orxDISPLAY_KU32_BITMAP_FLAG_LOADING);
       orxMEMORY_BARRIER();
+
+      /* Sends event */
+      orxEVENT_SEND(orxEVENT_TYPE_DISPLAY, orxDISPLAY_EVENT_LOAD_BITMAP, pstInfo->pstBitmap, orxNULL, &stPayload);
 
       /* Asked for deletion? */
       if(orxFLAG_TEST(pstInfo->pstBitmap->u32Flags, orxDISPLAY_KU32_BITMAP_FLAG_DELETE))
@@ -3627,6 +3656,78 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_GetBitmapData(const orxBITMAP *_pstBitmap,
   return eResult;
 }
 
+orxSTATUS orxFASTCALL orxDisplay_GLFW_SetPartialBitmapData(orxBITMAP *_pstBitmap, const orxU8 *_au8Data, orxU32 _u32X, orxU32 _u32Y, orxU32 _u32Width, orxU32 _u32Height)
+{
+  orxSTATUS eResult;
+
+  /* Checks */
+  orxASSERT((sstDisplay.u32Flags & orxDISPLAY_KU32_STATIC_FLAG_READY) == orxDISPLAY_KU32_STATIC_FLAG_READY);
+  orxASSERT(_pstBitmap != orxNULL);
+  orxASSERT(_au8Data != orxNULL);
+
+  /* Not loading? */
+  if(!orxFLAG_TEST(_pstBitmap->u32Flags, orxDISPLAY_KU32_BITMAP_FLAG_LOADING))
+  {
+    orxU32 u32BitmapWidth, u32BitmapHeight;
+
+    /* Gets bitmap's size */
+    u32BitmapWidth  = orxF2U(_pstBitmap->fWidth);
+    u32BitmapHeight = orxF2U(_pstBitmap->fHeight);
+
+    /* Valid? */
+    if((_pstBitmap != sstDisplay.pstScreen) && (_u32X + _u32Width <= u32BitmapWidth) && (_u32Y + _u32Height <= u32BitmapHeight))
+    {
+      orxU8 *pu8ImageBuffer;
+
+      /* Uses sources bitmap */
+      pu8ImageBuffer = (orxU8 *)_au8Data;
+
+      /* Binds texture */
+      glBindTexture(GL_TEXTURE_2D, _pstBitmap->uiTexture);
+      glASSERT();
+
+      /* Updates its content */
+      glTexSubImage2D(GL_TEXTURE_2D, 0, _u32X, _u32Y, (GLsizei)_u32Width, (GLsizei)_u32Height, GL_RGBA, GL_UNSIGNED_BYTE, pu8ImageBuffer);
+      glASSERT();
+
+      /* Restores previous texture */
+      glBindTexture(GL_TEXTURE_2D, (sstDisplay.apstBoundBitmapList[sstDisplay.s32ActiveTextureUnit] != orxNULL) ? sstDisplay.apstBoundBitmapList[sstDisplay.s32ActiveTextureUnit]->uiTexture : 0);
+      glASSERT();
+
+      /* Updates result */
+      eResult = orxSTATUS_SUCCESS;
+    }
+    else
+    {
+      /* Screen? */
+      if(_pstBitmap == sstDisplay.pstScreen)
+      {
+        /* Logs message */
+        orxDEBUG_PRINT(orxDEBUG_LEVEL_DISPLAY, "Can't set bitmap data: can't use screen as destination bitmap.");
+      }
+      else
+      {
+        /* Logs message */
+        orxDEBUG_PRINT(orxDEBUG_LEVEL_DISPLAY, "Can't set bitmap data for [%s]: rectangle coordinates (%u, %u) - (%u, %u) are out of bound [%ux%u].", _pstBitmap->zLocation, _u32X, _u32Y, _u32X + _u32Width, _u32Y + _u32Height, u32BitmapWidth, u32BitmapHeight);
+      }
+
+      /* Updates result */
+      eResult = orxSTATUS_FAILURE;
+    }
+  }
+  else
+  {
+    /* Logs message */
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_DISPLAY, "Can't set bitmap data for [%s]: bitmap is not done loading.", _pstBitmap->zLocation);
+
+    /* Updates result */
+    eResult = orxSTATUS_FAILURE;
+  }
+
+  /* Done! */
+  return eResult;
+}
+
 orxSTATUS orxFASTCALL orxDisplay_GLFW_SetDestinationBitmaps(orxBITMAP **_apstBitmapList, orxU32 _u32Number)
 {
   orxSTATUS eResult = orxSTATUS_SUCCESS;
@@ -3881,20 +3982,14 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetDestinationBitmaps(orxBITMAP **_apstBit
   if(eResult != orxSTATUS_FAILURE)
   {
     GLdouble  dOrthoRight, dOrthoBottom;
-    GLint     iX, iY;
+    GLint     iX = 0, iY = 0;
     GLsizei   iWidth, iHeight;
 
     /* Is screen? */
     if(sstDisplay.apstDestinationBitmapList[0] == sstDisplay.pstScreen)
     {
-      /* Gets content scale */
-      glfwGetWindowContentScale(sstDisplay.pstWindow, &(sstDisplay.vContentScale.fX), &(sstDisplay.vContentScale.fY));
-
-      /* Updates viewport info */
-      iX      = 0;
-      iY      = 0;
-      iWidth  = (GLsizei)orxF2S(sstDisplay.apstDestinationBitmapList[0]->fWidth * sstDisplay.vContentScale.fX);
-      iHeight = (GLsizei)orxF2S(sstDisplay.apstDestinationBitmapList[0]->fHeight * sstDisplay.vContentScale.fY);
+      /* Gets framebuffer size */
+      glfwGetFramebufferSize(sstDisplay.pstWindow, (int *)&iWidth, (int *)&iHeight);
 
       /* Updates ortho info */
       dOrthoRight   = (GLdouble)sstDisplay.apstDestinationBitmapList[0]->fWidth;
@@ -3903,8 +3998,6 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetDestinationBitmaps(orxBITMAP **_apstBit
     else
     {
       /* Updates viewport info */
-      iX      = 0;
-      iY      = 0;
       iWidth  = (GLsizei)orxF2S(sstDisplay.apstDestinationBitmapList[0]->fWidth);
       iHeight = (GLsizei)orxF2S(sstDisplay.apstDestinationBitmapList[0]->fHeight);
 
@@ -4324,14 +4417,11 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetBitmapClipping(orxBITMAP *_pstBitmap, o
     /* Sets OpenGL clipping */
     if(_pstBitmap == sstDisplay.pstScreen)
     {
-      /* Gets content scale */
-      glfwGetWindowContentScale(sstDisplay.pstWindow, &(sstDisplay.vContentScale.fX), &(sstDisplay.vContentScale.fY));
-
       /* Gets new clipping values */
-      u32ClipX      = orxF2U(sstDisplay.vContentScale.fX * _u32TLX);
-      u32ClipY      = orxF2U(sstDisplay.vContentScale.fY * (orxF2U(sstDisplay.apstDestinationBitmapList[0]->fHeight) - _u32BRY));
-      u32ClipWidth  = orxF2U(sstDisplay.vContentScale.fX * (_u32BRX - _u32TLX));
-      u32ClipHeight = orxF2U(sstDisplay.vContentScale.fY * (_u32BRY - _u32TLY));
+      u32ClipX      = orxF2U(orxMath_Round(sstDisplay.vContentScale.fX * orxU2F(_u32TLX)));
+      u32ClipY      = orxF2U(orxMath_Round(sstDisplay.vContentScale.fY * (sstDisplay.apstDestinationBitmapList[0]->fHeight - orxU2F(_u32BRY))));
+      u32ClipWidth  = orxF2U(orxMath_Round(sstDisplay.vContentScale.fX * orxU2F(_u32BRX - _u32TLX)));
+      u32ClipHeight = orxF2U(orxMath_Round(sstDisplay.vContentScale.fY * orxU2F(_u32BRY - _u32TLY)));
     }
     else
     {
@@ -4672,6 +4762,8 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
         /* Success? */
         if(pstNewWindow != orxNULL)
         {
+          int iWindowX = 0, iWindowY = 0;
+
           /* Deletes previous window */
           glfwDestroyWindow(sstDisplay.pstWindow);
 
@@ -4687,6 +4779,9 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
           /* Registers resize callback */
           glfwSetWindowSizeCallback(sstDisplay.pstWindow, orxDisplay_GLFW_ResizeCallback);
 
+          /* Registers content scale callback */
+          glfwSetWindowContentScaleCallback(sstDisplay.pstWindow, orxDisplay_GLFW_ContentScaleCallback);
+
           /* Registers drop callback */
           glfwSetDropCallback(sstDisplay.pstWindow, orxDisplay_GLFW_DropCallback);
 
@@ -4695,6 +4790,12 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
 
           /* Reactivates resize event */
           sstDisplay.u32Flags &= ~orxDISPLAY_KU32_STATIC_FLAG_IGNORE_EVENT;
+
+          /* Gets window position */
+          glfwGetWindowPos(sstDisplay.pstWindow, &iWindowX, &iWindowY);
+
+          /* Forces a position update */
+          orxDisplay_GLFW_PosCallback(sstDisplay.pstWindow, iWindowX, iWindowY);
         }
         else
         {
@@ -4829,14 +4930,16 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
     {
       orxDISPLAY_EVENT_PAYLOAD  stPayload;
       orxU32                    u32ClipWidth, u32ClipHeight;
+      int                       iFramebufferWidth, iFramebufferHeight;
 
-      /* Gets content scale */
-      glfwGetWindowContentScale(sstDisplay.pstWindow, &(sstDisplay.vContentScale.fX), &(sstDisplay.vContentScale.fY));
+      /* Gets window size */
+      glfwGetWindowSize(sstDisplay.pstWindow, (int *)&iWidth, (int *)&iHeight);
 
-      /* Gets actual window size */
-      glfwGetFramebufferSize(sstDisplay.pstWindow, &iWidth, &iHeight);
-      iWidth  = (int)(orx2F(iWidth) / sstDisplay.vContentScale.fX);
-      iHeight = (int)(orx2F(iHeight) / sstDisplay.vContentScale.fY);
+      /* Gets framebuffer size */
+      glfwGetFramebufferSize(sstDisplay.pstWindow, &iFramebufferWidth, &iFramebufferHeight);
+
+      /* Sets content scale */
+      orxVector_Set(&(sstDisplay.vContentScale), orxS2F(iFramebufferWidth) / orxS2F(iWidth), orxS2F(iFramebufferHeight) / orxS2F(iHeight), orxFLOAT_1);
 
       /* Is fullscreen? */
       if(_pstVideoMode->bFullScreen != orxFALSE)
@@ -4927,8 +5030,8 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
       sstDisplay.apstBoundBitmapList[sstDisplay.s32ActiveTextureUnit] = orxNULL;
 
       /* Gets corrected clip dimensions */
-      u32ClipWidth  = orxF2U(orxU2F(sstDisplay.pstScreen->u32RealWidth) * sstDisplay.vContentScale.fX);
-      u32ClipHeight = orxF2U(orxU2F(sstDisplay.pstScreen->u32RealHeight) * sstDisplay.vContentScale.fY);
+      u32ClipWidth  = orxF2U(orxMath_Round(sstDisplay.pstScreen->fWidth * sstDisplay.vContentScale.fX));
+      u32ClipHeight = orxF2U(orxMath_Round(sstDisplay.pstScreen->fHeight * sstDisplay.vContentScale.fY));
 
       /* Clears new display surface */
       glScissor(0, 0, (GLsizei)u32ClipWidth, (GLsizei)u32ClipHeight);
@@ -4963,6 +5066,7 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
   if(eResult != orxSTATUS_FAILURE)
   {
     orxVECTOR vFramebufferSize;
+    int       iFramebufferWidth, iFramebufferHeight;
 
     /* Isn't fullscreen? */
     if(!orxFLAG_TEST(sstDisplay.u32Flags, orxDISPLAY_KU32_STATIC_FLAG_FULLSCREEN))
@@ -4972,7 +5076,7 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
       /* Gets current monitor */
       pstMonitor = orxDisplay_GLFW_GetMonitor();
 
-      /* Succes? */
+      /* Success? */
       if(pstMonitor != orxNULL)
       {
         int iX, iY;
@@ -5084,12 +5188,16 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetVideoMode(const orxDISPLAY_VIDEO_MODE *
     glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(orxDISPLAY_VERTEX), orxFLAG_TEST(sstDisplay.u32Flags, orxDISPLAY_KU32_STATIC_FLAG_VBO) ? (GLvoid *)offsetof(orxDISPLAY_GLFW_VERTEX, stRGBA) : &(sstDisplay.astVertexList[0].stRGBA));
     glASSERT();
 
+    /* Gets framebuffer size */
+    glfwGetFramebufferSize(sstDisplay.pstWindow, &iFramebufferWidth, &iFramebufferHeight);
+    orxVector_Set(&vFramebufferSize, orx2F(iFramebufferWidth), orx2F(iFramebufferHeight), orxFLOAT_0);
+
     /* Stores config values */
     orxConfig_SetFloat(orxDISPLAY_KZ_CONFIG_WIDTH, sstDisplay.pstScreen->fWidth);
     orxConfig_SetFloat(orxDISPLAY_KZ_CONFIG_HEIGHT, sstDisplay.pstScreen->fHeight);
     orxConfig_SetU32(orxDISPLAY_KZ_CONFIG_DEPTH, sstDisplay.pstScreen->u32Depth);
     orxConfig_SetU32(orxDISPLAY_KZ_CONFIG_REFRESH_RATE, sstDisplay.u32RefreshRate);
-    orxConfig_SetVector(orxDISPLAY_KZ_CONFIG_FRAMEBUFFER_SIZE, orxVector_Set(&vFramebufferSize, sstDisplay.pstScreen->fWidth * sstDisplay.vContentScale.fY, sstDisplay.pstScreen->fHeight * sstDisplay.vContentScale.fY, orxFLOAT_0));
+    orxConfig_SetVector(orxDISPLAY_KZ_CONFIG_FRAMEBUFFER_SIZE, &vFramebufferSize);
   }
 
   /* For all texture units */
@@ -5148,6 +5256,9 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_SetFullScreen(orxBOOL _bFullScreen)
   if(bUpdate != orxFALSE)
   {
     orxDISPLAY_VIDEO_MODE stVideoMode;
+
+    /* Inits content scale */
+    orxVector_Copy(&(sstDisplay.vContentScale), &orxVECTOR_1);
 
     /* Inits video mode */
     stVideoMode.u32Width        = orxF2U(sstDisplay.pstScreen->fWidth);
@@ -5250,9 +5361,6 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_Init()
         {
           orxDISPLAY_VIDEO_MODE stVideoMode;
 
-          /* Inits content scale */
-          orxVector_Copy(&(sstDisplay.vContentScale), &orxVECTOR_1);
-
           /* Updates default mode */
           orxDisplay_GLFW_UpdateDefaultMode();
 
@@ -5321,16 +5429,21 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_Init()
             sstDisplay.ePrimitive         = orxDISPLAY_KE_DEFAULT_PRIMITIVE;
 
             /* Gets clock */
-            pstClock = orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE);
+            pstClock = orxClock_Get(orxCLOCK_KZ_CORE);
 
             /* Registers update function */
             if((pstClock != orxNULL) && ((eResult = orxClock_Register(pstClock, orxDisplay_GLFW_Update, orxNULL, orxMODULE_ID_DISPLAY, orxCLOCK_PRIORITY_HIGHER)) != orxSTATUS_FAILURE))
             {
+              int iWindowX = 0, iWindowY = 0;
+
               /* Ignores resize event for now */
               sstDisplay.u32Flags |= orxDISPLAY_KU32_STATIC_FLAG_IGNORE_EVENT;
 
               /* Registers resize callback */
               glfwSetWindowSizeCallback(sstDisplay.pstWindow, orxDisplay_GLFW_ResizeCallback);
+
+              /* Registers content scale callback */
+              glfwSetWindowContentScaleCallback(sstDisplay.pstWindow, orxDisplay_GLFW_ContentScaleCallback);
 
               /* Registers drop callback */
               glfwSetDropCallback(sstDisplay.pstWindow, orxDisplay_GLFW_DropCallback);
@@ -5340,6 +5453,12 @@ orxSTATUS orxFASTCALL orxDisplay_GLFW_Init()
 
               /* Reactivates resize event */
               sstDisplay.u32Flags &= ~orxDISPLAY_KU32_STATIC_FLAG_IGNORE_EVENT;
+
+              /* Gets window position */
+              glfwGetWindowPos(sstDisplay.pstWindow, &iWindowX, &iWindowY);
+
+              /* Forces a position update */
+              orxDisplay_GLFW_PosCallback(sstDisplay.pstWindow, iWindowX, iWindowY);
             }
             else
             {
@@ -5461,7 +5580,7 @@ void orxFASTCALL orxDisplay_GLFW_Exit()
     orxEvent_RemoveHandler(orxEVENT_TYPE_FIRST_RESERVED, orxDisplay_GLFW_EventHandler);
 
     /* Unregisters update function */
-    orxClock_Unregister(orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE), orxDisplay_GLFW_Update);
+    orxClock_Unregister(orxClock_Get(orxCLOCK_KZ_CORE), orxDisplay_GLFW_Update);
 
     /* Deletes banks */
     orxBank_Delete(sstDisplay.pstBitmapBank);
@@ -6176,6 +6295,7 @@ orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_SetBlendMode, DISPLAY, SET_BLEN
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_SetBitmapClipping, DISPLAY, SET_BITMAP_CLIPPING);
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_SetBitmapData, DISPLAY, SET_BITMAP_DATA);
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_GetBitmapData, DISPLAY, GET_BITMAP_DATA);
+orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_SetPartialBitmapData, DISPLAY, SET_PARTIAL_BITMAP_DATA);
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_GetBitmapSize, DISPLAY, GET_BITMAP_SIZE);
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_GetBitmapID, DISPLAY, GET_BITMAP_ID);
 orxPLUGIN_USER_CORE_FUNCTION_ADD(orxDisplay_GLFW_TransformBitmap, DISPLAY, TRANSFORM_BITMAP);

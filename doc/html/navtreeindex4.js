@@ -1,5 +1,7 @@
 var NAVTREEINDEX4 =
 {
+"group__orx_console.html#gabd0d0bb35fb0b78c65359e0c3e774bb7":[3,0,0,2,3,10],
+"group__orx_console.html#gacd3c960e8277577e152b9fe22e8ae210":[1,12,30],
 "group__orx_console.html#gacd3c960e8277577e152b9fe22e8ae210":[3,0,0,2,3,30],
 "group__orx_console.html#gad010eef86ec9af2ef6d4fb521b9309d9":[1,12,21],
 "group__orx_console.html#gad010eef86ec9af2ef6d4fb521b9309d9":[3,0,0,2,3,21],
@@ -50,6 +52,8 @@ var NAVTREEINDEX4 =
 "group__orx_debug.html#ga624ce02bb92e42e3f9e61e86b46cc172":[3,0,0,3,0,48],
 "group__orx_debug.html#ga629ee22b4d60797e9756cd2a2b71fba1":[1,13,44],
 "group__orx_debug.html#ga629ee22b4d60797e9756cd2a2b71fba1":[3,0,0,3,0,44],
+"group__orx_debug.html#ga68b2aaefbe68c1562a4345bac9a0bce1":[1,13,33],
+"group__orx_debug.html#ga68b2aaefbe68c1562a4345bac9a0bce1":[3,0,0,3,0,33],
 "group__orx_debug.html#ga68c4bb3a289caab5454f5884336ed3bb":[1,13,11],
 "group__orx_debug.html#ga68c4bb3a289caab5454f5884336ed3bb":[3,0,0,3,0,11],
 "group__orx_debug.html#ga697867e95a050e42382f7ca7ee713e7b":[1,13,6],
@@ -110,8 +114,6 @@ var NAVTREEINDEX4 =
 "group__orx_debug.html#gaed495952193ca60dd7ab5b7c5e4c9c4d":[3,0,0,3,0,4],
 "group__orx_debug.html#gaf00cf24f2d5881602fa5e1eb0e3f7cf0":[1,13,31],
 "group__orx_debug.html#gaf00cf24f2d5881602fa5e1eb0e3f7cf0":[3,0,0,3,0,31],
-"group__orx_debug.html#gaf759a250e945c1f6e3f7014b305cb50a":[1,13,33],
-"group__orx_debug.html#gaf759a250e945c1f6e3f7014b305cb50a":[3,0,0,3,0,33],
 "group__orx_debug.html#gafad0480f23425e369e8d1815e9bb0760":[1,13,25],
 "group__orx_debug.html#gafad0480f23425e369e8d1815e9bb0760":[3,0,0,3,0,25],
 "group__orx_debug.html#gafe8fdeac188b198a0c5d5f0875304793":[1,13,16],
@@ -247,7 +249,5 @@ var NAVTREEINDEX4 =
 "group__orx_decl.html#gab970a40e167e4b5346aec7ae059d8929":[3,0,0,1,0,46],
 "group__orx_decl.html#gaba0c6d803c3068e62fb6a23e392c7a8b":[1,14,27],
 "group__orx_decl.html#gaba0c6d803c3068e62fb6a23e392c7a8b":[3,0,0,1,0,27],
-"group__orx_decl.html#gabbeeb81b726fec18294830c2604ede52":[1,14,31],
-"group__orx_decl.html#gabbeeb81b726fec18294830c2604ede52":[3,0,0,1,0,31],
-"group__orx_decl.html#gabc2be0e1293d2edcee787a99f665afa5":[1,14,11]
+"group__orx_decl.html#gabbeeb81b726fec18294830c2604ede52":[1,14,31]
 };

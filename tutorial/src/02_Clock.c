@@ -41,7 +41,7 @@
  * can of course be updated with only one clock, and the given clock context is also used here
  * for demonstration only.
  * The first clock runs at 100 Hz and the second one at 5 Hz.
- * If you press numpad '+', '-' and '*', you can alter the time of the first clock.
+ * You can alter the time of the first clock by activating the "Fast", "Normal" and "Slow" inputs.
  * It'll still be updated at the same rate, but the time information that the clock will pass
  * to the callback will be stretched.
  * This provides an easy way of adding time distortion and having parts
@@ -191,7 +191,7 @@ orxSTATUS orxFASTCALL Init()
   orxClock_Register(pstClock2, Update, pstObject2, orxMODULE_ID_MAIN, orxCLOCK_PRIORITY_NORMAL);
 
   /* Gets main clock */
-  pstMainClock = orxClock_FindFirst(orx2F(-1.0f), orxCLOCK_TYPE_CORE);
+  pstMainClock = orxClock_Get(orxCLOCK_KZ_CORE);
 
   /* Registers our input update callback to it
    * !!IMPORTANT!! *DO NOT* handle inputs in clock callbacks that are *NOT* registered to the main clock

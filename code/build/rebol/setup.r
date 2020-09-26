@@ -8,7 +8,7 @@ REBOL [
 
 ; Default settings
 tag:            <version>
-host:           ["https://bitbucket.org/orx/orx-extern/get/" tag ".zip"]
+host:           ["https://codeload.github.com/orx/orx-extern/zip/" tag]
 extern:         %extern/
 cache:          %cache/
 temp:           %.temp/
@@ -22,9 +22,9 @@ build-file:     %code/include/base/orxBuild.h
 env-variable:   "ORX"
 env-path:       %code
 platform-data:  compose/deep [
-  "windows"   [premake "windows"                                                              config ["gmake" "codelite" "codeblocks" "vs2015" "vs2017" "vs2019"]                                                                             env-msg "Please restart your favorite IDE before using orx."]
-  "mac"       [premake "mac"                                                                  config ["gmake" "codelite" "codeblocks" "xcode4"                  ]                                                                             env-msg "Please logout/login to refresh your environment if you're using an IDE."]
-  "linux"     [premake (either find to-text system/platform/2 "x64" ["linux64"] ["linux32"])  config ["gmake" "codelite" "codeblocks"                           ]   deps ["freeglut3-dev" "libsndfile1-dev" "libopenal-dev" "libxrandr-dev"]  env-msg "Please logout/login to refresh your environment if you're using an IDE."]
+  "windows"   [premake "windows"                                                              config ["gmake" "codelite" "codeblocks" "vs2015" "vs2017" "vs2019"]                                                                               env-msg "Please restart your favorite IDE before using orx."]
+  "mac"       [premake "mac"                                                                  config ["gmake" "codelite" "codeblocks" "xcode4"                  ]                                                                               env-msg "Please logout/login to refresh your environment if you're using an IDE."]
+  "linux"     [premake (either find to-text system/platform/2 "x64" ["linux64"] ["linux32"])  config ["gmake" "codelite" "codeblocks"                           ]   deps ["libgl1-mesa-dev" "libsndfile1-dev" "libopenal-dev" "libxrandr-dev"]  env-msg "Please logout/login to refresh your environment if you're using an IDE."]
 ]
 
 
@@ -140,6 +140,7 @@ either platform = "windows" [
   for-each [env-file env-prefix mandatory] reduce [
     env-home/.bashrc                      rejoin ["export " env-variable "="]   true
     env-home/.profile                     rejoin ["export " env-variable "="]   true
+    env-home/.zshrc                       rejoin ["export " env-variable "="]   false
     env-home/.config/fish/fish_variables  rejoin ["SETUVAR " env-variable ":"]  false
   ] [
     if any [mandatory exists? env-file] [
@@ -250,6 +251,7 @@ if exists? git [
       ]
 
       either hook-file [
+        attempt [make-dir/deep first split-path hook-path]
         print ["== Installing git hook [" hook "]"]
         write/append hook-path hook-file
         if not platform = "windows" [
