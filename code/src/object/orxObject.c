@@ -1,6 +1,6 @@
 /* Orx - Portable Game Engine
  *
- * Copyright (c) 2008-2020 Orx-Project
+ * Copyright (c) 2008-2021 Orx-Project
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -119,6 +119,7 @@
 #define orxOBJECT_KZ_CONFIG_ALPHA               "Alpha"
 #define orxOBJECT_KZ_CONFIG_DEPTH_SCALE         "DepthScale"
 #define orxOBJECT_KZ_CONFIG_POSITION            "Position"
+#define orxOBJECT_KZ_CONFIG_SPHERICAL_POSITION  "SphericalPosition"
 #define orxOBJECT_KZ_CONFIG_SPEED               "Speed"
 #define orxOBJECT_KZ_CONFIG_PIVOT               "Pivot"
 #define orxOBJECT_KZ_CONFIG_SIZE                "Size"
@@ -150,12 +151,12 @@
 #define orxOBJECT_KZ_LEFT_PIVOT                 "left"
 #define orxOBJECT_KZ_BOTTOM_PIVOT               "bottom"
 #define orxOBJECT_KZ_RIGHT_PIVOT                "right"
+#define orxOBJECT_KZ_ANIM                       "anim"
+#define orxOBJECT_KZ_CHILD                      "child"
 #define orxOBJECT_KZ_FX                         "fx"
 #define orxOBJECT_KZ_SOUND                      "sound"
 #define orxOBJECT_KZ_SPAWN                      "spawn"
 #define orxOBJECT_KZ_TRACK                      "track"
-#define orxOBJECT_KZ_CHILD                      "child"
-#define orxOBJECT_KZ_ANIM                       "anim"
 
 
 #define orxOBJECT_KZ_X                          "x"
@@ -179,7 +180,7 @@ void orxFASTCALL orxObject_##FUNCTION##Recursive(orxOBJECT *_pstObject, PARAM_TY
   /* Updates object */                                                                      \
   orxObject_##FUNCTION(_pstObject, _Param);                                                 \
                                                                                             \
-  /* For all its children */                                                                \
+  /* For all its owned children */                                                          \
   for(pstChild = orxObject_GetOwnedChild(_pstObject);                                       \
       pstChild != orxNULL;                                                                  \
       pstChild = orxObject_GetOwnedSibling(pstChild))                                       \
@@ -206,6 +207,14 @@ typedef struct __orxOBJECT_STORAGE_t
 
 } orxOBJECT_STORAGE;
 
+/** Object lists
+ */
+typedef struct __orxOBJECT_LISTS_t
+{
+  orxLINKLIST       stList;                     /**< List : 12 */
+  orxLINKLIST       stEnableList;               /**< Enable list : 24 */
+} orxOBJECT_LISTS;
+
 /** Object structure
  */
 struct __orxOBJECT_t
@@ -223,23 +232,26 @@ struct __orxOBJECT_t
   orxVECTOR         vSpeed;                     /**< Object speed : 132 */
   orxVECTOR         vSize;                      /**< Object size : 144 */
   orxVECTOR         vPivot;                     /**< Object pivot : 156 */
-  orxLINKLIST_NODE  stGroupNode;                /**< Group node: 176 */
+  orxLINKLIST_NODE  stGroupNode;                /**< Group node: 168 */
+  orxLINKLIST_NODE  stEnableNode;               /**< Enable node: 180 */
+  orxLINKLIST_NODE  stEnableGroupNode;          /**< Enable group node: 192 */
 };
 
 /** Static structure
  */
 typedef struct __orxOBJECT_STATIC_t
 {
-  orxCLOCK     *pstClock;                       /**< Clock */
-  orxBANK      *pstGroupBank;                   /**< Group bank */
-  orxBANK      *pstAgeBank;                     /**< Age bank */
-  orxHASHTABLE *pstGroupTable;                  /**< Group table */
-  orxLINKLIST  *pstCachedGroupList;             /**< Cached group list */
-  orxOBJECT    *pstCurrentObject;               /**< Current object */
-  orxSTRINGID   stDefaultGroupID;               /**< Default group ID */
-  orxSTRINGID   stCurrentGroupID;               /**< Current group ID */
-  orxSTRINGID   stCachedGroupID;                /**< Cached group ID */
-  orxU32        u32Flags;                       /**< Control flags */
+  orxCLOCK         *pstClock;                   /**< Clock */
+  orxBANK          *pstGroupBank;               /**< Group bank */
+  orxBANK          *pstAgeBank;                 /**< Age bank */
+  orxHASHTABLE     *pstGroupTable;              /**< Group table */
+  orxOBJECT_LISTS  *pstCachedGroupLists;        /**< Cached group lists */
+  orxOBJECT        *pstCurrentObject;           /**< Current object */
+  orxLINKLIST       stEnableList;               /**< Enabled objects list */
+  orxSTRINGID       stDefaultGroupID;           /**< Default group ID */
+  orxSTRINGID       stCurrentGroupID;           /**< Current group ID */
+  orxSTRINGID       stCachedGroupID;            /**< Cached group ID */
+  orxU32            u32Flags;                   /**< Control flags */
 
 } orxOBJECT_STATIC;
 
@@ -259,7 +271,7 @@ static orxOBJECT_STATIC sstObject;
 
 /** Update body scale
  */
-void orxFASTCALL orxObject_UpdateBodyScale(orxOBJECT *_pstObject)
+static void orxFASTCALL orxObject_UpdateBodyScale(orxOBJECT *_pstObject)
 {
   orxOBJECT *pstChild;
 
@@ -448,82 +460,6 @@ static orxINLINE orxSTATUS orxObject_SetRelativePivot(orxOBJECT *_pstObject, con
   return eResult;
 }
 
-/** Sets literal lifetime
- */
-static orxINLINE orxSTATUS orxObject_SetLiteralLifeTime(orxOBJECT *_pstObject, const orxSTRING _zLifeTime)
-{
-  orxCHAR   acBuffer[128];
-  orxU32    u32Flags = orxOBJECT_KU32_FLAG_NONE;
-  orxSTATUS eResult;
-
-  /* Gets lower case value */
-  acBuffer[sizeof(acBuffer) - 1] = orxCHAR_NULL;
-  orxString_LowerCase(orxString_NCopy(acBuffer, _zLifeTime, sizeof(acBuffer) - 1));
-
-  /* FX? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_FX) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_FX_LIFETIME;
-  }
-
-  /* Sound? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_SOUND) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_SOUND_LIFETIME;
-  }
-
-  /* Spawn? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_SPAWN) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_SPAWNER_LIFETIME;
-  }
-
-  /* Track? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_TRACK) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_TIMELINE_LIFETIME;
-  }
-
-  /* Child? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_CHILD) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_CHILDREN_LIFETIME;
-  }
-
-  /* Anim? */
-  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_ANIM) != orxNULL)
-  {
-    /* Updates flags */
-    u32Flags |= orxOBJECT_KU32_FLAG_ANIM_LIFETIME;
-  }
-
-  /* Has flags? */
-  if(orxFLAG_TEST(u32Flags, orxOBJECT_KU32_MASK_STRUCTURE_LIFETIME))
-  {
-    /* Clears previous lifetime */
-    orxObject_SetLifeTime(_pstObject, -orxFLOAT_1);
-
-    /* Applies them */
-    orxStructure_SetFlags(_pstObject, u32Flags, orxOBJECT_KU32_MASK_STRUCTURE_LIFETIME);
-
-    /* Updates result */
-    eResult = orxSTATUS_SUCCESS;
-  }
-  else
-  {
-    /* Updates result */
-    eResult = orxSTATUS_FAILURE;
-  }
-
-  /* Done! */
-  return eResult;
-}
-
 /** Command: Create
  */
 void orxFASTCALL orxObject_CommandCreate(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
@@ -607,23 +543,58 @@ void orxFASTCALL orxObject_CommandGetCount(orxU32 _u32ArgNumber, const orxCOMMAN
   orxOBJECT  *pstObject;
 
   /* No name? */
-  if(_u32ArgNumber == 0)
+  if((_u32ArgNumber == 0) || (*_astArgList[0].zValue == orxCHAR_NULL))
   {
-    /* Updates count */
-    u32Count = orxStructure_GetCount(orxSTRUCTURE_ID_OBJECT);
+    /* Enabled only? */
+    if((_u32ArgNumber > 1) && (_astArgList[1].bValue != orxFALSE))
+    {
+      /* Updates count */
+      u32Count = orxLinkList_GetCount(&(sstObject.stEnableList));
+    }
+    else
+    {
+      /* Updates count */
+      u32Count = orxStructure_GetCount(orxSTRUCTURE_ID_OBJECT);
+    }
   }
   else
   {
-    /* For all objects */
-    for(pstObject = orxOBJECT(orxStructure_GetFirst(orxSTRUCTURE_ID_OBJECT)), u32Count = 0;
-        pstObject != orxNULL;
-        pstObject = orxOBJECT(orxStructure_GetNext(pstObject)))
+    /* Enabled only? */
+    if((_u32ArgNumber > 1) && (_astArgList[1].bValue != orxFALSE))
     {
-      /* Match? */
-      if(orxString_Compare(orxObject_GetName(pstObject), _astArgList[0].zValue) == 0)
+      orxLINKLIST_NODE *pstNode;
+
+      /* For all enabled nodes */
+      for(pstNode = orxLinkList_GetFirst(&(sstObject.stEnableList)), u32Count = 0;
+          pstNode != orxNULL;
+          pstNode = orxLinkList_GetNext(pstNode))
       {
-        /* Updates count */
-        u32Count++;
+        orxOBJECT *pstObject;
+
+        /* Gets associated object */
+        pstObject = orxSTRUCT_GET_FROM_FIELD(orxOBJECT, stEnableNode, pstNode);
+
+        /* Match? */
+        if(orxString_Compare(orxObject_GetName(pstObject), _astArgList[0].zValue) == 0)
+        {
+          /* Updates count */
+          u32Count++;
+        }
+      }
+    }
+    else
+    {
+      /* For all objects */
+      for(pstObject = orxOBJECT(orxStructure_GetFirst(orxSTRUCTURE_ID_OBJECT)), u32Count = 0;
+          pstObject != orxNULL;
+          pstObject = orxOBJECT(orxStructure_GetNext(pstObject)))
+      {
+        /* Match? */
+        if(orxString_Compare(orxObject_GetName(pstObject), _astArgList[0].zValue) == 0)
+        {
+          /* Updates count */
+          u32Count++;
+        }
       }
     }
   }
@@ -1127,6 +1098,90 @@ void orxFASTCALL orxObject_CommandGetMassCenter(orxU32 _u32ArgNumber, const orxC
   return;
 }
 
+/** Command: ApplyTorque
+ */
+void orxFASTCALL orxObject_CommandApplyTorque(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Applies torque */
+    orxObject_ApplyTorque(pstObject, _astArgList[1].fValue);
+
+    /* Updates result */
+    _pstResult->u64Value = _astArgList[0].u64Value;
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->u64Value = orxU64_UNDEFINED;
+  }
+
+  /* Done! */
+  return;
+}
+
+/** Command: ApplyForce
+ */
+void orxFASTCALL orxObject_CommandApplyForce(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Applies force */
+    orxObject_ApplyForce(pstObject, &(_astArgList[1].vValue), (_u32ArgNumber > 2) ? &(_astArgList[2].vValue) : orxNULL);
+
+    /* Updates result */
+    _pstResult->u64Value = _astArgList[0].u64Value;
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->u64Value = orxU64_UNDEFINED;
+  }
+
+  /* Done! */
+  return;
+}
+
+/** Command: ApplyImpulse
+ */
+void orxFASTCALL orxObject_CommandApplyImpulse(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Applies impulse */
+    orxObject_ApplyImpulse(pstObject, &(_astArgList[1].vValue), (_u32ArgNumber > 2) ? &(_astArgList[2].vValue) : orxNULL);
+
+    /* Updates result */
+    _pstResult->u64Value = _astArgList[0].u64Value;
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->u64Value = orxU64_UNDEFINED;
+  }
+
+  /* Done! */
+  return;
+}
+
 /** Command: SetText
  */
 void orxFASTCALL orxObject_CommandSetText(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
@@ -1298,6 +1353,31 @@ void orxFASTCALL orxObject_CommandGetName(orxU32 _u32ArgNumber, const orxCOMMAND
 
   /* Updates result */
   _pstResult->zValue = (pstObject != orxNULL) ? orxObject_GetName(pstObject) : orxSTRING_EMPTY;
+
+  /* Done! */
+  return;
+}
+
+/** Command: GetActiveTime
+ */
+void orxFASTCALL orxObject_CommandGetActiveTime(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Updates result */
+    _pstResult->fValue = orxObject_GetActiveTime(pstObject);
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->fValue = orx2F(-1.0f);
+  }
 
   /* Done! */
   return;
@@ -2179,6 +2259,59 @@ void orxFASTCALL orxObject_CommandDetach(orxU32 _u32ArgNumber, const orxCOMMAND_
   return;
 }
 
+/** Command: SetIgnoreFlags
+ */
+void orxFASTCALL orxObject_CommandSetIgnoreFlags(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Sets its ignore flags */
+    orxObject_SetLiteralIgnoreFlags(pstObject, _astArgList[1].zValue);
+
+    /* Updates result */
+    _pstResult->u64Value = _astArgList[0].u64Value;
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->u64Value = orxU64_UNDEFINED;
+  }
+
+  /* Done! */
+  return;
+}
+
+/** Command: GetIgnoreFlags
+ */
+void orxFASTCALL orxObject_CommandGetIgnoreFlags(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Gets its ignore flags */
+    _pstResult->zValue = orxObject_GetLiteralIgnoreFlags(pstObject);
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->zValue = orxSTRING_EMPTY;
+  }
+
+  /* Done! */
+  return;
+}
+
 /** Command: LogParents
  */
 void orxFASTCALL orxObject_CommandLogParents(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
@@ -2479,8 +2612,17 @@ void orxFASTCALL orxObject_CommandAddTrack(orxU32 _u32ArgNumber, const orxCOMMAN
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Adds time line */
-    orxObject_AddTimeLineTrack(pstObject, _astArgList[1].zValue);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Adds time line track */
+      orxObject_AddTimeLineTrackRecursive(pstObject, _astArgList[1].zValue);
+    }
+    else
+    {
+      /* Adds time line track */
+      orxObject_AddTimeLineTrack(pstObject, _astArgList[1].zValue);
+    }
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -2507,8 +2649,17 @@ void orxFASTCALL orxObject_CommandRemoveTrack(orxU32 _u32ArgNumber, const orxCOM
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Removes time line */
-    orxObject_RemoveTimeLineTrack(pstObject, _astArgList[1].zValue);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Removes time line track */
+      orxObject_RemoveTimeLineTrackRecursive(pstObject, _astArgList[1].zValue);
+    }
+    else
+    {
+      /* Removes time line track */
+      orxObject_RemoveTimeLineTrack(pstObject, _astArgList[1].zValue);
+    }
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -2535,16 +2686,34 @@ void orxFASTCALL orxObject_CommandAddFX(orxU32 _u32ArgNumber, const orxCOMMAND_V
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Unique? */
-    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    /* Recursive? */
+    if((_u32ArgNumber > 3) && (_astArgList[3].bValue != orxFALSE))
     {
-      /* Adds unique FX */
-      orxObject_AddUniqueFX(pstObject, _astArgList[1].zValue);
+      /* Unique? */
+      if(_astArgList[2].bValue != orxFALSE)
+      {
+        /* Adds unique FX */
+        orxObject_AddUniqueFXRecursive(pstObject, _astArgList[1].zValue);
+      }
+      else
+      {
+        /* Adds FX */
+        orxObject_AddFXRecursive(pstObject, _astArgList[1].zValue);
+      }
     }
     else
     {
-      /* Adds FX */
-      orxObject_AddFX(pstObject, _astArgList[1].zValue);
+      /* Unique? */
+      if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+      {
+        /* Adds unique FX */
+        orxObject_AddUniqueFX(pstObject, _astArgList[1].zValue);
+      }
+      else
+      {
+        /* Adds FX */
+        orxObject_AddFX(pstObject, _astArgList[1].zValue);
+      }
     }
 
     /* Updates result */
@@ -2572,8 +2741,45 @@ void orxFASTCALL orxObject_CommandRemoveFX(orxU32 _u32ArgNumber, const orxCOMMAN
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Removes FX */
-    orxObject_RemoveFX(pstObject, _astArgList[1].zValue);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Removes FX */
+      orxObject_RemoveFXRecursive(pstObject, _astArgList[1].zValue);
+    }
+    else
+    {
+      /* Removes FX */
+      orxObject_RemoveFX(pstObject, _astArgList[1].zValue);
+    }
+
+    /* Updates result */
+    _pstResult->u64Value = _astArgList[0].u64Value;
+  }
+  else
+  {
+    /* Updates result */
+    _pstResult->u64Value = orxU64_UNDEFINED;
+  }
+
+  /* Done! */
+  return;
+}
+
+/** Command: RemoveAllFXs
+ */
+void orxFASTCALL orxObject_CommandRemoveAllFXs(orxU32 _u32ArgNumber, const orxCOMMAND_VAR *_astArgList, orxCOMMAND_VAR *_pstResult)
+{
+  orxOBJECT *pstObject;
+
+  /* Gets object */
+  pstObject = orxOBJECT(orxStructure_Get(_astArgList[0].u64Value));
+
+  /* Valid? */
+  if(pstObject != orxNULL)
+  {
+    /* Removes all its FXs */
+    orxObject_RemoveAllFXs(pstObject);
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -2600,8 +2806,17 @@ void orxFASTCALL orxObject_CommandAddShader(orxU32 _u32ArgNumber, const orxCOMMA
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Adds shader */
-    orxObject_AddShader(pstObject, _astArgList[1].zValue);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Adds shader */
+      orxObject_AddShaderRecursive(pstObject, _astArgList[1].zValue);
+    }
+    else
+    {
+      /* Adds shader */
+      orxObject_AddShader(pstObject, _astArgList[1].zValue);
+    }
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -2628,8 +2843,17 @@ void orxFASTCALL orxObject_CommandRemoveShader(orxU32 _u32ArgNumber, const orxCO
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Removes shader */
-    orxObject_RemoveShader(pstObject, _astArgList[1].zValue);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Removes shader */
+      orxObject_RemoveShaderRecursive(pstObject, _astArgList[1].zValue);
+    }
+    else
+    {
+      /* Removes shader */
+      orxObject_RemoveShader(pstObject, _astArgList[1].zValue);
+    }
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -2768,33 +2992,33 @@ void orxFASTCALL orxObject_CommandSetAnim(orxU32 _u32ArgNumber, const orxCOMMAND
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Is asking for current anim? */
-    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    /* Recursive? */
+    if((_u32ArgNumber > 3) && (_astArgList[3].bValue != orxFALSE))
     {
-      /* Recursive? */
-      if((_u32ArgNumber > 3) && (_astArgList[3].bValue != orxFALSE))
+      /* Is asking for current anim? */
+      if(_astArgList[2].bValue != orxFALSE)
       {
         /* Sets its current anim */
         orxObject_SetCurrentAnimRecursive(pstObject, _astArgList[1].zValue);
       }
       else
       {
-        /* Sets its current anim */
-        orxObject_SetCurrentAnim(pstObject, _astArgList[1].zValue);
+        /* Sets its target anim */
+        orxObject_SetTargetAnimRecursive(pstObject, _astArgList[1].zValue);
       }
     }
     else
     {
-      /* Recursive? */
-      if((_u32ArgNumber > 3) && (_astArgList[3].bValue != orxFALSE))
+      /* Is asking for current anim? */
+      if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
       {
-        /* Sets its target anim */
-        orxObject_SetTargetAnimRecursive(pstObject, _astArgList[1].zValue);
+        /* Sets its current anim */
+        orxObject_SetCurrentAnim(pstObject, _astArgList[1].zValue);
       }
       else
       {
         /* Sets its target anim */
-        orxObject_SetTargetAnim(pstObject, _astArgList[1].zValue);
+        orxObject_SetTargetAnim(pstObject, (_u32ArgNumber > 1) ? _astArgList[1].zValue : orxNULL);
       }
     }
 
@@ -2857,8 +3081,17 @@ void orxFASTCALL orxObject_CommandSetAnimFrequency(orxU32 _u32ArgNumber, const o
   /* Valid? */
   if(pstObject != orxNULL)
   {
-    /* Sets its target anim */
-    orxObject_SetAnimFrequency(pstObject, (_u32ArgNumber > 1) ? _astArgList[1].fValue : orxFLOAT_1);
+    /* Recursive? */
+    if((_u32ArgNumber > 2) && (_astArgList[2].bValue != orxFALSE))
+    {
+      /* Sets its anim frequency */
+      orxObject_SetAnimFrequencyRecursive(pstObject, _astArgList[1].fValue);
+    }
+    else
+    {
+      /* Sets its anim frequency */
+      orxObject_SetAnimFrequency(pstObject, (_u32ArgNumber > 1) ? _astArgList[1].fValue : orxFLOAT_1);
+    }
 
     /* Updates result */
     _pstResult->u64Value = _astArgList[0].u64Value;
@@ -3084,7 +3317,7 @@ static orxINLINE void orxObject_RegisterCommands()
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, FindNext, "Object", orxCOMMAND_VAR_TYPE_U64, 0, 2, {"Name = *", orxCOMMAND_VAR_TYPE_STRING}, {"Previous = <none>", orxCOMMAND_VAR_TYPE_U64});
 
   /* Command: GetCount */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetCount, "Count", orxCOMMAND_VAR_TYPE_U32, 0, 1, {"Name = <empty>", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetCount, "Count", orxCOMMAND_VAR_TYPE_U32, 0, 2, {"Name = <empty>", orxCOMMAND_VAR_TYPE_STRING}, {"EnabledOnly = false", orxCOMMAND_VAR_TYPE_BOOL});
 
   /* Command: GetID */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetID, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
@@ -3120,6 +3353,13 @@ static orxINLINE void orxObject_RegisterCommands()
   /* Command: GetMassCenter */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetMassCenter, "MassCenter", orxCOMMAND_VAR_TYPE_VECTOR, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
+  /* Command: ApplyTorque */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, ApplyTorque, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Torque", orxCOMMAND_VAR_TYPE_FLOAT});
+  /* Command: ApplyForce */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, ApplyForce, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Force", orxCOMMAND_VAR_TYPE_VECTOR}, {"MassCenter = <empty>", orxCOMMAND_VAR_TYPE_VECTOR});
+  /* Command: ApplyImpulse */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, ApplyImpulse, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Impulse", orxCOMMAND_VAR_TYPE_VECTOR}, {"MassCenter = <empty>", orxCOMMAND_VAR_TYPE_VECTOR});
+
   /* Command: SetText */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetText, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Text", orxCOMMAND_VAR_TYPE_STRING});
   /* Command: GetText */
@@ -3137,6 +3377,9 @@ static orxINLINE void orxObject_RegisterCommands()
 
   /* Command: GetName */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetName, "Name", orxCOMMAND_VAR_TYPE_STRING, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
+
+  /* Command: GetActiveTime */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetActiveTime, "ActiveTime", orxCOMMAND_VAR_TYPE_FLOAT, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
   /* Command: SetLifeTime */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetLifeTime, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"LifeTime", orxCOMMAND_VAR_TYPE_STRING});
@@ -3192,6 +3435,11 @@ static orxINLINE void orxObject_RegisterCommands()
   /* Command: Detach */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, Detach, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
+  /* Command: SetIgnoreFlags */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetIgnoreFlags, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"IgnoreFlags", orxCOMMAND_VAR_TYPE_STRING});
+  /* Command: GetIgnoreFlags */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetIgnoreFlags, "IgnoreFlags", orxCOMMAND_VAR_TYPE_STRING, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
+
   /* Command: LogParents */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, LogParents, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
@@ -3210,19 +3458,21 @@ static orxINLINE void orxObject_RegisterCommands()
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetClock, "Clock", orxCOMMAND_VAR_TYPE_STRING, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
   /* Command: AddTrack */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddTrack, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"TimeLine", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddTrack, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"TimeLine", orxCOMMAND_VAR_TYPE_STRING}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: RemoveTrack */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveTrack, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"TimeLine", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveTrack, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"TimeLine", orxCOMMAND_VAR_TYPE_STRING}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
 
   /* Command: AddFX */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddFX, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"FX", orxCOMMAND_VAR_TYPE_STRING}, {"Unique = false", orxCOMMAND_VAR_TYPE_BOOL});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddFX, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 2, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"FX", orxCOMMAND_VAR_TYPE_STRING}, {"Unique = false", orxCOMMAND_VAR_TYPE_BOOL}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: RemoveFX */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveFX, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"FX", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveFX, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"FX", orxCOMMAND_VAR_TYPE_STRING}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
+  /* Command: RemoveAllFXs */
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveAllFXs, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
   /* Command: AddShader */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddShader, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Shader", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddShader, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Shader", orxCOMMAND_VAR_TYPE_STRING}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: RemoveShader */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveShader, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Shader", orxCOMMAND_VAR_TYPE_STRING});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, RemoveShader, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Shader", orxCOMMAND_VAR_TYPE_STRING}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
 
   /* Command: AddSound */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, AddSound, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Sound", orxCOMMAND_VAR_TYPE_STRING});
@@ -3235,11 +3485,11 @@ static orxINLINE void orxObject_RegisterCommands()
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetPitch, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 0, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Pitch", orxCOMMAND_VAR_TYPE_FLOAT});
 
   /* Command: SetAnim */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetAnim, "Object", orxCOMMAND_VAR_TYPE_U64, 2, 2, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Anim", orxCOMMAND_VAR_TYPE_STRING}, {"Current = false", orxCOMMAND_VAR_TYPE_BOOL}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetAnim, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 3, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Anim = <void>", orxCOMMAND_VAR_TYPE_STRING}, {"Current = false", orxCOMMAND_VAR_TYPE_BOOL}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: GetAnim */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetAnim, "Anim", orxCOMMAND_VAR_TYPE_STRING, 1, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Current = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: SetAnimFrequency */
-  orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetAnimFrequency, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 1, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Frequency = 1.0", orxCOMMAND_VAR_TYPE_FLOAT});
+  orxCOMMAND_REGISTER_CORE_COMMAND(Object, SetAnimFrequency, "Object", orxCOMMAND_VAR_TYPE_U64, 1, 2, {"Object", orxCOMMAND_VAR_TYPE_U64}, {"Frequency = 1.0", orxCOMMAND_VAR_TYPE_FLOAT}, {"Recursive = false", orxCOMMAND_VAR_TYPE_BOOL});
   /* Command: GetAnimFrequency */
   orxCOMMAND_REGISTER_CORE_COMMAND(Object, GetAnimFrequency, "Frequency", orxCOMMAND_VAR_TYPE_FLOAT, 1, 0, {"Object", orxCOMMAND_VAR_TYPE_U64});
 
@@ -3306,6 +3556,13 @@ static orxINLINE void orxObject_UnregisterCommands()
   /* Command: GetMassCenter */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, GetMassCenter);
 
+  /* Command: ApplyTorque */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, ApplyTorque);
+  /* Command: ApplyForce */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, ApplyForce);
+  /* Command: ApplyImpulse */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, ApplyImpulse);
+
   /* Command: SetText */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, SetText);
   /* Command: GetText */
@@ -3323,6 +3580,9 @@ static orxINLINE void orxObject_UnregisterCommands()
 
   /* Command: GetName */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, GetName);
+
+  /* Command: GetActiveTime */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, GetActiveTime);
 
   /* Command: SetLifeTime */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, SetLifeTime);
@@ -3378,6 +3638,11 @@ static orxINLINE void orxObject_UnregisterCommands()
   /* Command: Detach */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, Detach);
 
+  /* Command: SetIgnoreFlags */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, SetIgnoreFlags);
+  /* Command: GetIgnoreFlags */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, GetIgnoreFlags);
+
   /* Command: LogParents */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, LogParents);
 
@@ -3404,6 +3669,8 @@ static orxINLINE void orxObject_UnregisterCommands()
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, AddFX);
   /* Command: RemoveFX */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, RemoveFX);
+  /* Command: RemoveAllFXs */
+  orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, RemoveAllFXs);
 
   /* Command: AddShader */
   orxCOMMAND_UNREGISTER_CORE_COMMAND(Object, AddShader);
@@ -3463,6 +3730,9 @@ static orxINLINE orxOBJECT *orxObject_CreateInternal()
 
     /* Sets default group ID */
     orxObject_SetGroupID(pstResult, sstObject.stDefaultGroupID);
+
+    /* Adds it to the enable list */
+    orxLinkList_AddEnd(&(sstObject.stEnableList), &(pstResult->stEnableNode));
 
     /* Increases count */
     orxStructure_IncreaseCount(pstResult);
@@ -3532,6 +3802,16 @@ static orxINLINE orxSTATUS orxObject_DeleteInternal(orxOBJECT *_pstObject)
         orxLinkList_Remove(&(_pstObject->stGroupNode));
       }
 
+      /* Removes object from the enable lists */
+      if(orxLinkList_GetList(&(_pstObject->stEnableNode)) != orxNULL)
+      {
+        orxLinkList_Remove(&(_pstObject->stEnableNode));
+      }
+      if(orxLinkList_GetList(&(_pstObject->stEnableGroupNode)) != orxNULL)
+      {
+        orxLinkList_Remove(&(_pstObject->stEnableGroupNode));
+      }
+
       /* Deletes structure */
       orxStructure_Delete(_pstObject);
     }
@@ -3574,6 +3854,9 @@ static orxSTATUS orxFASTCALL orxObject_EventHandler(const orxEVENT *_pstEvent)
   {
     /* Stores current object as temporary parent in payload */
     *((orxOBJECT **)_pstEvent->pstPayload) = sstObject.pstCurrentObject;
+
+    /* Sets it as owner */
+    orxObject_SetOwner(orxOBJECT(_pstEvent->hSender), sstObject.pstCurrentObject);
   }
 
   /* Done! */
@@ -3599,6 +3882,7 @@ static orxINLINE void orxObject_DeleteAll()
     pstObject = orxOBJECT(orxStructure_GetFirst(orxSTRUCTURE_ID_OBJECT));
   }
 
+  /* Done! */
   return;
 }
 
@@ -3606,12 +3890,10 @@ static orxINLINE void orxObject_DeleteAll()
  * @param[int] _pstObject         Concerned object
  * @param[in] _pstClockInfo       Clock information where this callback has been registered
  */
-static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, const orxCLOCK_INFO *_pstClockInfo)
+static void orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, const orxCLOCK_INFO *_pstClockInfo)
 {
-  orxBOOL       bDeleted = orxFALSE;
   orxU32        u32UpdateFlags;
   orxSTRUCTURE *pstStructure;
-  orxOBJECT    *pstResult;
 
   /* Profiles */
   orxPROFILER_PUSH_MARKER("orxObject_Update");
@@ -3626,7 +3908,8 @@ static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, co
   if((u32UpdateFlags == orxOBJECT_KU32_FLAG_ENABLED)
   || (u32UpdateFlags & orxOBJECT_KU32_FLAG_DEATH_ROW))
   {
-    const orxCLOCK_INFO *pstClockInfo;
+    const orxCLOCK_INFO  *pstClockInfo;
+    orxBOOL               bDeleted = orxFALSE;
 
     /* Has clock? */
     if(orxStructure_TestFlags(_pstObject, 1 << orxSTRUCTURE_ID_CLOCK))
@@ -3652,9 +3935,6 @@ static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, co
       /* Should die? */
       if(_pstObject->fLifeTime <= orxFLOAT_0)
       {
-        /* Gets next object */
-        pstResult = orxOBJECT(orxStructure_GetNext(_pstObject));
-
         /* Deletes it */
         orxObject_Delete(_pstObject);
 
@@ -3664,7 +3944,7 @@ static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, co
     }
 
     /* !!! TODO !!! */
-    /* Updates culling info before calling update subfunctions */
+    /* Updates culling info before calling update sub-functions */
 
     /* Wasn't object deleted? */
     if(bDeleted == orxFALSE)
@@ -3789,18 +4069,11 @@ static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, co
     }
   }
 
-  /* Wasn't deleted? */
-  if(bDeleted == orxFALSE)
-  {
-    /* Gets next object */
-    pstResult = (orxOBJECT *)orxStructure_GetNext(_pstObject);
-  }
-
   /* Profiles */
   orxPROFILER_POP_MARKER();
 
   /* Done! */
-  return pstResult;
+  return;
 }
 
 /** Updates all the objects
@@ -3809,16 +4082,27 @@ static orxOBJECT *orxFASTCALL orxObject_UpdateInternal(orxOBJECT *_pstObject, co
  */
 static void orxFASTCALL orxObject_UpdateAll(const orxCLOCK_INFO *_pstClockInfo, void *_pContext)
 {
-  orxOBJECT *pstObject;
+  orxLINKLIST_NODE *pstNode, *pstNextNode;
 
   /* Profiles */
   orxPROFILER_PUSH_MARKER("orxObject_UpdateAll");
 
-  /* Updates all objects */
-  for(pstObject = (orxOBJECT *)orxStructure_GetFirst(orxSTRUCTURE_ID_OBJECT);
-      pstObject != orxNULL;
-      pstObject = orxObject_UpdateInternal(pstObject, _pstClockInfo))
-  ;
+  /* For all enabled nodes */
+  for(pstNode = orxLinkList_GetFirst(&(sstObject.stEnableList));
+      pstNode != orxNULL;
+      pstNode = pstNextNode)
+  {
+    orxOBJECT *pstObject;
+
+    /* Gets next node */
+    pstNextNode = orxLinkList_GetNext(pstNode);
+
+    /* Gets associated object */
+    pstObject = orxSTRUCT_GET_FROM_FIELD(orxOBJECT, stEnableNode, pstNode);
+
+    /* Updates it */
+    orxObject_UpdateInternal(pstObject, _pstClockInfo);
+  }
 
   /* Profiles */
   orxPROFILER_POP_MARKER();
@@ -3846,12 +4130,10 @@ void orxFASTCALL orxObject_Setup()
   orxModule_AddDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_EVENT);
   orxModule_AddDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_COMMAND);
   orxModule_AddDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_STRING);
-  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_TEXTURE);
-  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_GRAPHIC);
-  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_FONT);
-  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_BODY);
   orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_ANIMPOINTER);
+  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_BODY);
   orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_FXPOINTER);
+  orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_GRAPHIC);
   orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_SHADERPOINTER);
   orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_SOUNDPOINTER);
   orxModule_AddOptionalDependency(orxMODULE_ID_OBJECT, orxMODULE_ID_SPAWNER);
@@ -3905,7 +4187,7 @@ orxSTATUS orxFASTCALL orxObject_Init()
           if(eResult != orxSTATUS_FAILURE)
           {
             /* Creates banks */
-            sstObject.pstGroupBank  = orxBank_Create(orxOBJECT_KU32_GROUP_BANK_SIZE, sizeof(orxLINKLIST), orxBANK_KU32_FLAG_NONE, orxMEMORY_TYPE_MAIN);
+            sstObject.pstGroupBank  = orxBank_Create(orxOBJECT_KU32_GROUP_BANK_SIZE, sizeof(orxOBJECT_LISTS), orxBANK_KU32_FLAG_NONE, orxMEMORY_TYPE_MAIN);
             sstObject.pstAgeBank    = orxBank_Create(orxOBJECT_KU32_AGE_BANK_SIZE, sizeof(orxOBJECT *), orxBANK_KU32_FLAG_NONE, orxMEMORY_TYPE_MAIN);
 
             /* Success? */
@@ -4059,6 +4341,7 @@ void orxFASTCALL orxObject_Exit()
     orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Tried to exit from object module when it wasn't initialized.");
   }
 
+  /* Done! */
   return;
 }
 
@@ -4175,7 +4458,7 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
         orxU32          u32FrameFlags, u32Flags = orxOBJECT_KU32_FLAG_NONE;
         orxS32          s32Number;
         orxCOLOR        stColor;
-        orxBOOL         bUseParentScale = orxFALSE, bUseParentPosition = orxFALSE, bHasColor = orxFALSE, bUseParentSpace = orxFALSE;
+        orxBOOL         bUseParentScale = orxFALSE, bUseParentPosition = orxFALSE, bHasColor = orxFALSE, bUseParentSpace = orxFALSE, bHasPosition = orxFALSE;
 
         /* Backups current spawner */
         pstPreviousObject = sstObject.pstCurrentObject;
@@ -4522,17 +4805,8 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
                 /* Valid? */
                 if(pstGraphic != orxNULL)
                 {
-                  orxBOOL bDebugLevelBackup;
-
-                  /* Disables display logs */
-                  bDebugLevelBackup = orxDEBUG_IS_LEVEL_ENABLED(orxDEBUG_LEVEL_DISPLAY);
-                  orxDEBUG_ENABLE_LEVEL(orxDEBUG_LEVEL_DISPLAY, orxFALSE);
-
                   /* Creates a clone */
-                  pstGraphic = orxGraphic_CreateFromConfig(orxGraphic_GetName(pstGraphic));
-
-                  /* Re-enables display logs */
-                  orxDEBUG_ENABLE_LEVEL(orxDEBUG_LEVEL_DISPLAY, bDebugLevelBackup);
+                  pstGraphic = orxGraphic_Clone(pstGraphic);
 
                   /* Valid? */
                   if(pstGraphic != orxNULL)
@@ -4640,13 +4914,41 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
         orxColor_Set(&stColor, &orxVECTOR_WHITE, orxFLOAT_1);
 
         /* Has color? */
-        if(orxConfig_GetVector(orxOBJECT_KZ_CONFIG_COLOR, &vColor) != orxNULL)
+        if(orxConfig_HasValue(orxOBJECT_KZ_CONFIG_COLOR) != orxFALSE)
         {
-          /* Normalizes and applies it */
-          orxVector_Mulf(&(stColor.vRGB), &vColor, orxCOLOR_NORMALIZER);
+          /* Is a vector value? */
+          if(orxConfig_GetVector(orxOBJECT_KZ_CONFIG_COLOR, &vColor) != orxNULL)
+          {
+            /* Normalizes it */
+            orxVector_Mulf(&(stColor.vRGB), &vColor, orxCOLOR_NORMALIZER);
 
-          /* Updates status */
-          bHasColor = orxTRUE;
+            /* Updates status */
+            bHasColor = orxTRUE;
+          }
+          /* Color literal */
+          else
+          {
+            const orxSTRING zColor;
+
+            /* Gets color name */
+            zColor = orxConfig_GetString(orxOBJECT_KZ_CONFIG_COLOR);
+
+            /* Pushes color section */
+            orxConfig_PushSection(orxCOLOR_KZ_CONFIG_SECTION);
+
+            /* Retrieves its value */
+            if(orxConfig_GetVector(zColor, &vColor) != orxNULL)
+            {
+              /* Normalizes it */
+              orxVector_Mulf(&(stColor.vRGB), &vColor, orxCOLOR_NORMALIZER);
+
+              /* Updates status */
+              bHasColor = orxTRUE;
+            }
+
+            /* Pops config section */
+            orxConfig_PopSection();
+          }
         }
         /* Has RGB values? */
         else if(orxConfig_HasValue(orxOBJECT_KZ_CONFIG_RGB) != orxFALSE)
@@ -4685,6 +4987,26 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
         /* Has alpha? */
         if(orxConfig_HasValue(orxOBJECT_KZ_CONFIG_ALPHA) != orxFALSE)
         {
+          /* Doesn't have any color? */
+          if(bHasColor == orxFALSE)
+          {
+            orxGRAPHIC* pstGraphic;
+
+            /* Gets current graphic */
+            pstGraphic = orxObject_GetWorkingGraphic(pstResult);
+
+            /* Valid? */
+            if(pstGraphic != orxNULL)
+            {
+              /* Has color? */
+              if(orxGraphic_HasColor(pstGraphic) != orxFALSE)
+              {
+                /* Retrieves it */
+                orxGraphic_GetColor(pstGraphic, &stColor);
+              }
+            }
+          }
+
           /* Applies it */
           orxColor_SetAlpha(&stColor, orxConfig_GetFloat(orxOBJECT_KZ_CONFIG_ALPHA));
 
@@ -4779,8 +5101,26 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
 
         /* *** Position & rotation */
 
-        /* Has a position? */
+        /* Has cartesian position? */
         if(orxConfig_GetVector(orxOBJECT_KZ_CONFIG_POSITION, &vValue) != orxNULL)
+        {
+          /* Updates status */
+          bHasPosition = orxTRUE;
+        }
+        /* Has spherical position? */
+        else if(orxConfig_GetVector(orxOBJECT_KZ_CONFIG_SPHERICAL_POSITION, &vValue) != orxNULL)
+        {
+          /* Transforms it */
+          vValue.fTheta *= orxMATH_KF_DEG_TO_RAD;
+          vValue.fPhi   *= orxMATH_KF_DEG_TO_RAD;
+          orxVector_FromSphericalToCartesian(&vValue, &vValue);
+
+          /* Updates status */
+          bHasPosition = orxTRUE;
+        }
+
+        /* Has position? */
+        if(bHasPosition != orxFALSE)
         {
           /* Uses parent's position? */
           if(bUseParentPosition != orxFALSE)
@@ -4835,9 +5175,6 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
               /* Valid? */
               if(pstChild != orxNULL)
               {
-                /* Stores its owner */
-                orxStructure_SetOwner(pstChild, pstResult);
-
                 /* Has last child? */
                 if(pstLastChild != orxNULL)
                 {
@@ -5120,6 +5457,13 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
           orxASSERT(ppstObject != orxNULL);
           *ppstObject = pstResult;
 
+          /* Has a body? */
+          if(orxOBJECT_GET_STRUCTURE(pstResult, BODY) != orxNULL)
+          {
+            /* Logs message */
+            orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, orxANSI_KZ_COLOR_FG_GREEN "[%s]" orxANSI_KZ_COLOR_FG_DEFAULT ": object has a body. Age cannot be applied to it: this object will remain " orxANSI_KZ_COLOR_FG_RED "static" orxANSI_KZ_COLOR_FG_DEFAULT " while aging for " orxANSI_KZ_COLOR_FG_YELLOW "<%g>" orxANSI_KZ_COLOR_FG_DEFAULT " seconds.", orxObject_GetName(pstResult), fAge);
+          }
+
           /* Should apply age? */
           if(fAge > orxFLOAT_0)
           {
@@ -5146,10 +5490,10 @@ orxOBJECT *orxFASTCALL orxObject_CreateFromConfig(const orxSTRING _zConfigID)
             orxMemory_Copy(&stAgeClockInfo, pstClockInfo, sizeof(orxCLOCK_INFO));
 
             /* Has multiply modifier? */
-            if(stAgeClockInfo.eModType == orxCLOCK_MOD_TYPE_MULTIPLY)
+            if(stAgeClockInfo.afModifierList[orxCLOCK_MODIFIER_MULTIPLY] != orxFLOAT_0)
             {
               /* Updates age */
-              fAge *= stAgeClockInfo.fModValue;
+              fAge *= stAgeClockInfo.afModifierList[orxCLOCK_MODIFIER_MULTIPLY];
             }
 
             /* For all time slices */
@@ -5367,6 +5711,7 @@ void orxFASTCALL orxObject_UnlinkStructure(orxOBJECT *_pstObject, orxSTRUCTURE_I
     orxStructure_SetFlags(_pstObject, orxOBJECT_KU32_FLAG_NONE, 1 << _eStructureID);
   }
 
+  /* Done! */
   return;
 }
 
@@ -5420,6 +5765,37 @@ void orxFASTCALL orxObject_Enable(orxOBJECT *_pstObject, orxBOOL _bEnable)
 
       /* Updates status flags */
       orxStructure_SetFlags(_pstObject, orxOBJECT_KU32_FLAG_ENABLED, orxOBJECT_KU32_FLAG_NONE);
+
+      /* Isn't already part of the enable list? */
+      if(orxLinkList_GetList(&(_pstObject->stEnableNode)) == orxNULL)
+      {
+        orxOBJECT_LISTS *pstGroupLists;
+
+        /* Adds it to enable list */
+        orxLinkList_AddEnd(&(sstObject.stEnableList), &(_pstObject->stEnableNode));
+
+        /* Is cached group list? */
+        if(_pstObject->stGroupID == sstObject.stCachedGroupID)
+        {
+          /* Gets it */
+          pstGroupLists = sstObject.pstCachedGroupLists;
+        }
+        else
+        {
+          /* Gets group list */
+          pstGroupLists = (orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _pstObject->stGroupID);
+
+          /* Checks */
+          orxASSERT(pstGroupLists != orxNULL);
+
+          /* Caches it */
+          sstObject.pstCachedGroupLists = pstGroupLists;
+          sstObject.stCachedGroupID     = _pstObject->stGroupID;
+        }
+
+        /* Adds object to enable group list */
+        orxLinkList_AddEnd(&(pstGroupLists->stEnableList), &(_pstObject->stEnableGroupNode));
+      }
     }
   }
   else
@@ -5432,6 +5808,14 @@ void orxFASTCALL orxObject_Enable(orxOBJECT *_pstObject, orxBOOL _bEnable)
 
       /* Updates status flags */
       orxStructure_SetFlags(_pstObject, orxOBJECT_KU32_FLAG_NONE, orxOBJECT_KU32_FLAG_ENABLED);
+
+      /* Isn't on death row? */
+      if(!orxStructure_TestFlags(_pstObject, orxOBJECT_KU32_FLAG_DEATH_ROW))
+      {
+        /* Removes it from enable lists */
+        orxLinkList_Remove(&(_pstObject->stEnableNode));
+        orxLinkList_Remove(&(_pstObject->stEnableGroupNode));
+      }
     }
   }
 
@@ -5439,7 +5823,7 @@ void orxFASTCALL orxObject_Enable(orxOBJECT *_pstObject, orxBOOL _bEnable)
   return;
 }
 
-/** Enables/disables an object and all its children.
+/** Enables/disables an object and all its owned children.
  * @param[in]   _pstObject    Concerned object
  * @param[in]   _bEnable      Enable / disable
  */
@@ -5495,10 +5879,11 @@ void orxFASTCALL orxObject_Pause(orxOBJECT *_pstObject, orxBOOL _bPause)
     }
   }
 
+  /* Done! */
   return;
 }
 
-/** Pauses/unpauses an object and all its children.
+/** Pauses/unpauses an object and all its owned children.
  * @param[in]   _pstObject    Concerned object
  * @param[in]   _bPause       Pause / unpause
  */
@@ -5532,6 +5917,7 @@ void orxFASTCALL    orxObject_SetUserData(orxOBJECT *_pstObject, void *_pUserDat
   /* Stores it */
   _pstObject->pUserData = _pUserData;
 
+  /* Done! */
   return;
 }
 
@@ -5555,10 +5941,10 @@ void *orxFASTCALL orxObject_GetUserData(const orxOBJECT *_pstObject)
 }
 
 /** Sets owner for an object. Ownership in Orx is only about lifetime management. That is, when an object
- * dies, it also kills its children. Compare this with orxObject_SetParent().
+ * dies, it also kills its owned children. Compare this with orxObject_SetParent().
  *
  * Note that the "ChildList" field of an object's config section implies two things; that the object is both
- * the owner (orxObject_SetOwner()) and the parent (orxObject_SetParent()) of its children. There is an
+ * the owner (orxObject_SetOwner()) and the parent (orxObject_SetParent()) of its owned children. There is an
  * exception to this though; when an object's child has a parent camera, the object is only the owner, and
  * the camera is the parent.
  * @param[in]   _pstObject    Concerned object
@@ -6113,7 +6499,7 @@ orxSTATUS orxFASTCALL orxObject_SetPosition(orxOBJECT *_pstObject, const orxVECT
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6168,7 +6554,7 @@ orxSTATUS orxFASTCALL orxObject_SetWorldPosition(orxOBJECT *_pstObject, const or
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6222,7 +6608,7 @@ orxSTATUS orxFASTCALL orxObject_SetRotation(orxOBJECT *_pstObject, orxFLOAT _fRo
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6276,7 +6662,7 @@ orxSTATUS orxFASTCALL orxObject_SetWorldRotation(orxOBJECT *_pstObject, orxFLOAT
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6318,7 +6704,7 @@ orxSTATUS orxFASTCALL orxObject_SetScale(orxOBJECT *_pstObject, const orxVECTOR 
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6359,7 +6745,7 @@ orxSTATUS orxFASTCALL orxObject_SetWorldScale(orxOBJECT *_pstObject, const orxVE
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     eResult = orxSTATUS_FAILURE;
@@ -6396,7 +6782,7 @@ orxVECTOR *orxFASTCALL orxObject_GetPosition(const orxOBJECT *_pstObject, orxVEC
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     pvResult = orxNULL;
@@ -6433,7 +6819,7 @@ orxVECTOR *orxFASTCALL orxObject_GetWorldPosition(const orxOBJECT *_pstObject, o
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     pvResult = orxNULL;
@@ -6468,7 +6854,7 @@ orxFLOAT orxFASTCALL orxObject_GetRotation(const orxOBJECT *_pstObject)
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     fResult = orxFLOAT_0;
@@ -6503,7 +6889,7 @@ orxFLOAT orxFASTCALL orxObject_GetWorldRotation(const orxOBJECT *_pstObject)
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Updates result */
     fResult = orxFLOAT_0;
@@ -6516,7 +6902,7 @@ orxFLOAT orxFASTCALL orxObject_GetWorldRotation(const orxOBJECT *_pstObject)
 /** Get object scale. See orxObject_SetScale().
  * @param[in]   _pstObject      Concerned object
  * @param[out]  _pvScale        Object scale vector
- * @return      Scale vector
+ * @return      orxVECTOR / orxNULL
  */
 orxVECTOR *orxFASTCALL orxObject_GetScale(const orxOBJECT *_pstObject, orxVECTOR *_pvScale)
 {
@@ -6543,7 +6929,7 @@ orxVECTOR *orxFASTCALL orxObject_GetScale(const orxOBJECT *_pstObject, orxVECTOR
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Clears vector */
     orxVector_SetAll(_pvScale, orxFLOAT_0);
@@ -6559,7 +6945,7 @@ orxVECTOR *orxFASTCALL orxObject_GetScale(const orxOBJECT *_pstObject, orxVECTOR
 /** Gets object world scale. See orxObject_SetWorldScale().
  * @param[in]   _pstObject      Concerned object
  * @param[out]  _pvScale        Object world scale
- * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
+ * @return      orxVECTOR / orxNULL
  */
 orxVECTOR *orxFASTCALL orxObject_GetWorldScale(const orxOBJECT *_pstObject, orxVECTOR *_pvScale)
 {
@@ -6583,7 +6969,7 @@ orxVECTOR *orxFASTCALL orxObject_GetWorldScale(const orxOBJECT *_pstObject, orxV
   else
   {
     /* Logs message */
-    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame object.");
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
 
     /* Clears scale */
     orxVector_Copy(_pvScale, &orxVECTOR_0);
@@ -7109,6 +7495,117 @@ orxSTATUS orxFASTCALL orxObject_Detach(orxOBJECT *_pstObject)
   return eResult;
 }
 
+/** Sets object's ignore flags.
+ * @param[in]   _pstObject      Concerned object
+ * @param[out]  _u32IgnoreFlags Ignore flags to set (all other ignore flags will get cleared)
+ * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
+ */
+orxSTATUS orxFASTCALL orxObject_SetIgnoreFlags(orxOBJECT *_pstObject, orxU32 _u32IgnoreFlags)
+{
+  orxFRAME *pstFrame;
+  orxSTATUS eResult = orxSTATUS_SUCCESS;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Gets frame */
+  pstFrame = orxOBJECT_GET_STRUCTURE(_pstObject, FRAME);
+
+  /* Valid? */
+  if(pstFrame != orxNULL)
+  {
+    /* Sets ignore flags */
+    orxStructure_SetFlags(pstFrame, _u32IgnoreFlags, orxFRAME_KU32_MASK_IGNORE_ALL);
+  }
+  else
+  {
+    /* Logs message */
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
+
+    /* Updates result */
+    eResult = orxSTATUS_FAILURE;
+  }
+
+  /* Done! */
+  return eResult;
+}
+
+/** Sets object's ignore flags using literals.
+ * @param[in]   _pstObject      Concerned object
+ * @param[out]  _zIgnoreFlags   Literals of the ignore flags to set (all other ignore flags will get cleared)
+ * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
+ */
+orxSTATUS orxFASTCALL orxObject_SetLiteralIgnoreFlags(orxOBJECT *_pstObject, const orxSTRING _zIgnoreFlags)
+{
+  orxSTATUS eResult;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+  orxASSERT(_zIgnoreFlags != orxNULL);
+
+  /* Sets ignore flags */
+  eResult = orxObject_SetIgnoreFlags(_pstObject, orxFrame_GetIgnoreFlagValues(_zIgnoreFlags));
+
+  /* Done! */
+  return eResult;
+}
+
+/** Gets object's ignore flags.
+ * @param[in]   _pstObject      Concerned object
+ * @return      Ignore flags
+ */
+orxU32 orxFASTCALL orxObject_GetIgnoreFlags(const orxOBJECT *_pstObject)
+{
+  orxFRAME *pstFrame;
+  orxU32    u32Result;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Gets frame */
+  pstFrame = orxOBJECT_GET_STRUCTURE(_pstObject, FRAME);
+
+  /* Valid? */
+  if(pstFrame != orxNULL)
+  {
+    /* Gets ignore flags */
+    u32Result = orxStructure_GetFlags(pstFrame, orxFRAME_KU32_MASK_IGNORE_ALL);
+  }
+  else
+  {
+    /* Logs message */
+    orxDEBUG_PRINT(orxDEBUG_LEVEL_OBJECT, "Failed to get frame structure.");
+
+    /* Updates result */
+    u32Result = orxFRAME_KU32_FLAG_IGNORE_NONE;
+  }
+
+  /* Done! */
+  return u32Result;
+}
+
+/** Gets object's ignore flags literals. The result will not persist through other calls to this function or to orxFrame_GetIgnoreFlagNames().
+ * @param[in]   _pstObject      Concerned object
+ * @return      Ignore flags literals
+ */
+const orxSTRING orxFASTCALL orxObject_GetLiteralIgnoreFlags(const orxOBJECT *_pstObject)
+{
+  const orxSTRING zResult;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Gets ignore flags */
+  zResult = orxFrame_GetIgnoreFlagNames(orxObject_GetIgnoreFlags(_pstObject));
+
+  /* Done! */
+  return zResult;
+}
+
 /** Logs all parents of an object, including their frame data.
  * @param[in]   _pstObject      Concerned object
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -7116,11 +7613,16 @@ orxSTATUS orxFASTCALL orxObject_Detach(orxOBJECT *_pstObject)
 orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
 {
   orxU32    u32DebugFlags;
+  orxCHAR   acBuffer[512], acTempBuffer[128];
   orxSTATUS eResult = orxSTATUS_SUCCESS;
 
   /* Checks */
   orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
   orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Clears buffers */
+  orxMemory_Zero(&acBuffer, sizeof(acBuffer));
+  orxMemory_Zero(&acTempBuffer, sizeof(acTempBuffer));
 
   /* Backups debug flags */
   u32DebugFlags = orxDEBUG_GET_FLAGS();
@@ -7131,7 +7633,7 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
 
   /* Logs header */
   orxLOG("*** BEGIN PARENTS LOG: \"" orxANSI_KZ_COLOR_FG_CYAN "%s" orxANSI_KZ_COLOR_FG_DEFAULT "\" [" orxANSI_KZ_COLOR_FG_MAGENTA "0x%016llX" orxANSI_KZ_COLOR_FG_DEFAULT "] ***\n", orxObject_GetName(_pstObject), orxStructure_GetGUID(_pstObject));
-  orxLOG("             NAME                     GUID             [LOCAL]   POSITION        ROTATION           SCALE      =>    [WORLD]   POSITION        ROTATION           SCALE      [IGNORE FLAGS]");
+  orxLOG("             NAME                     GUID             [LOCAL]     POSITION          ROTATION             SCALE        =>    [WORLD]     POSITION          ROTATION             SCALE        [IGNORE FLAGS]");
 
   /* For all structures in parent hierarchy */
   for(orxSTRUCTURE *pstParent = orxSTRUCTURE(_pstObject); pstParent != orxNULL;)
@@ -7227,8 +7729,8 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
     /* Has frame? */
     if(pstFrame != orxNULL)
     {
-      orxCHAR   acBuffer[512] = {}, acTempBuffer[128] = {}, *pc = acBuffer;
       orxVECTOR vTemp;
+      orxCHAR  *pc = acBuffer;
       orxFLOAT  fRotation;
 
       /* Prints name */
@@ -7242,7 +7744,7 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
       /* Prints local position */
       orxFrame_GetPosition(pstFrame, orxFRAME_SPACE_LOCAL, &vTemp);
       orxString_NPrint(acTempBuffer, sizeof(acTempBuffer) - 1, "(%.6g, %.6g, %.6g)", vTemp.fX, vTemp.fY, vTemp.fZ);
-      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%24s", acTempBuffer);
+      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%28s", acTempBuffer);
 
       /* Prints local rotation */
       fRotation = orxFrame_GetRotation(pstFrame, orxFRAME_SPACE_LOCAL);
@@ -7252,7 +7754,7 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
       /* Prints local scale */
       orxFrame_GetScale(pstFrame, orxFRAME_SPACE_LOCAL, &vTemp);
       orxString_NPrint(acTempBuffer, sizeof(acTempBuffer) - 1, "(%.4g, %.4g, %.4g)", vTemp.fX, vTemp.fY, vTemp.fZ);
-      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%24s", acTempBuffer);
+      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%28s", acTempBuffer);
 
       /* Prints separator */
       pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_DEFAULT " => ");
@@ -7260,7 +7762,7 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
       /* Prints world position */
       orxFrame_GetPosition(pstFrame, orxFRAME_SPACE_GLOBAL, &vTemp);
       orxString_NPrint(acTempBuffer, sizeof(acTempBuffer) - 1, "(%.6g, %.6g, %.6g)", vTemp.fX, vTemp.fY, vTemp.fZ);
-      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%24s", acTempBuffer);
+      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%28s", acTempBuffer);
 
       /* Prints world rotation */
       fRotation = orxFrame_GetRotation(pstFrame, orxFRAME_SPACE_GLOBAL);
@@ -7270,7 +7772,7 @@ orxSTATUS orxFASTCALL orxObject_LogParents(const orxOBJECT *_pstObject)
       /* Prints world scale */
       orxFrame_GetScale(pstFrame, orxFRAME_SPACE_GLOBAL, &vTemp);
       orxString_NPrint(acTempBuffer, sizeof(acTempBuffer) - 1, "(%.4g, %.4g, %.4g)", vTemp.fX, vTemp.fY, vTemp.fZ);
-      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%24s", acTempBuffer);
+      pc += orxString_NPrint(pc, (orxU32)(sizeof(acBuffer) - 1 - (pc - acBuffer)), orxANSI_KZ_COLOR_FG_GREEN "%28s", acTempBuffer);
 
       /* Prints ignore flags */
       orxString_NPrint(acTempBuffer, sizeof(acTempBuffer) - 1, orxANSI_KZ_COLOR_FG_DEFAULT " [" orxANSI_KZ_COLOR_FG_YELLOW "%s" orxANSI_KZ_COLOR_FG_DEFAULT "]", orxFrame_GetIgnoreFlagNames(orxStructure_GetFlags(pstFrame, orxFRAME_KU32_MASK_IGNORE_ALL)));
@@ -7374,7 +7876,7 @@ orxSTATUS orxFASTCALL orxObject_SetAnimFrequency(orxOBJECT *_pstObject, orxFLOAT
   return eResult;
 }
 
-/** Sets the relative animation frequency for an object and its children.
+/** Sets the relative animation frequency for an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _fFrequency     Frequency to set: < 1.0 for slower than initial, > 1.0 for faster than initial
  * @return orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -7447,7 +7949,7 @@ orxSTATUS orxFASTCALL orxObject_SetCurrentAnim(orxOBJECT *_pstObject, const orxS
   return eResult;
 }
 
-/** Sets current animation for an object and its children.
+/** Sets current animation for an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zAnimName      Animation name (config's one) to set / orxNULL
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -7489,7 +7991,7 @@ orxSTATUS orxFASTCALL orxObject_SetTargetAnim(orxOBJECT *_pstObject, const orxST
   return eResult;
 }
 
-/** Sets target animation for an object and its children.
+/** Sets target animation for an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zAnimName      Animation name (config's one) to set / orxNULL
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -8220,7 +8722,7 @@ orxSTATUS orxFASTCALL orxObject_AddFX(orxOBJECT *_pstObject, const orxSTRING _zF
   return eResult;
 }
 
-/** Adds an FX to an object and its children.
+/** Adds an FX to an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zFXConfigID    Config ID of the FX to add
  */
@@ -8248,7 +8750,7 @@ orxSTATUS orxFASTCALL orxObject_AddUniqueFX(orxOBJECT *_pstObject, const orxSTRI
   return eResult;
 }
 
-/** Adds a unique FX to an object and its children.
+/** Adds a unique FX to an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zFXConfigID    Config ID of the FX to add
  */
@@ -8320,11 +8822,11 @@ orxSTATUS orxFASTCALL orxObject_AddDelayedFX(orxOBJECT *_pstObject, const orxSTR
   return eResult;
 }
 
-/** Adds a delayed FX to an object and its children.
+/** Adds a delayed FX to an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zFXConfigID    Config ID of the FX to add
  * @param[in]   _fDelay         Delay time
- * @param[in]   _bPropagate    Should the delay be incremented with each child application?
+ * @param[in]   _bPropagate     Should the delay be incremented with each child application?
  */
 void orxFASTCALL orxObject_AddDelayedFXRecursive(orxOBJECT *_pstObject, const orxSTRING _zFXConfigID, orxFLOAT _fDelay, orxBOOL _bPropagate)
 {
@@ -8341,7 +8843,7 @@ void orxFASTCALL orxObject_AddDelayedFXRecursive(orxOBJECT *_pstObject, const or
   /* Updates object */
   orxObject_AddDelayedFX(_pstObject, _zFXConfigID, fDelay);
 
-  /* For all its children */
+  /* For all its owned children */
   for(pstChild = orxObject_GetOwnedChild(_pstObject);
       pstChild != orxNULL;
       pstChild = orxObject_GetOwnedSibling(pstChild))
@@ -8430,7 +8932,7 @@ orxSTATUS orxFASTCALL orxObject_AddUniqueDelayedFX(orxOBJECT *_pstObject, const 
   return eResult;
 }
 
-/** Adds a unique delayed FX to an object and its children.
+/** Adds a unique delayed FX to an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zFXConfigID    Config ID of the FX to add
  * @param[in]   _fDelay         Delay time
@@ -8451,7 +8953,7 @@ void orxFASTCALL orxObject_AddUniqueDelayedFXRecursive(orxOBJECT *_pstObject, co
   /* Updates object */
   orxObject_AddUniqueDelayedFX(_pstObject, _zFXConfigID, fDelay);
 
-  /* For all its children */
+  /* For all its owned children */
   for(pstChild = orxObject_GetOwnedChild(_pstObject);
       pstChild != orxNULL;
       pstChild = orxObject_GetOwnedSibling(pstChild))
@@ -8472,7 +8974,7 @@ void orxFASTCALL orxObject_AddUniqueDelayedFXRecursive(orxOBJECT *_pstObject, co
 }
 
 /** Removes an FX using its config ID.
- * @param[in]   _pstObject      Concerned FXPointer
+ * @param[in]   _pstObject      Concerned object
  * @param[in]   _zFXConfigID    Config ID of the FX to remove
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
  */
@@ -8493,6 +8995,39 @@ orxSTATUS orxFASTCALL orxObject_RemoveFX(orxOBJECT *_pstObject, const orxSTRING 
   {
     /* Removes FX from config */
     eResult = orxFXPointer_RemoveFXFromConfig(pstFXPointer, _zFXConfigID);
+  }
+
+  /* Done! */
+  return eResult;
+}
+
+/** Removes an FX from an object and its owned children.
+ * @param[in]   _pstObject      Concerned object
+ * @param[in]   _zFXConfigID    Config ID of the FX to remove
+ */
+orxOBJECT_MAKE_RECURSIVE(RemoveFX, const orxSTRING);
+
+/** Removes all FXs.
+ * @param[in]   _pstObject      Concerned object
+ * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
+ */
+orxSTATUS orxFASTCALL orxObject_RemoveAllFXs(orxOBJECT *_pstObject)
+{
+  orxFXPOINTER *pstFXPointer;
+  orxSTATUS     eResult = orxSTATUS_FAILURE;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Gets its FXPointer */
+  pstFXPointer = orxOBJECT_GET_STRUCTURE(_pstObject, FXPOINTER);
+
+  /* Valid? */
+  if(pstFXPointer != orxNULL)
+  {
+    /* Removes all its FXs */
+    eResult = orxFXPointer_RemoveAllFXs(pstFXPointer);
   }
 
   /* Done! */
@@ -8840,6 +9375,12 @@ orxSTATUS orxFASTCALL orxObject_AddShader(orxOBJECT *_pstObject, const orxSTRING
   return eResult;
 }
 
+/** Adds a shader to an object and its owned children.
+ * @param[in]   _pstObject        Concerned object
+ * @param[in]   _zShaderConfigID  Config ID of the shader to add
+ */
+orxOBJECT_MAKE_RECURSIVE(AddShader, const orxSTRING);
+
 /** Removes a shader using its config ID.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _zShaderConfigID Config ID of the shader to remove
@@ -8867,6 +9408,12 @@ orxSTATUS orxFASTCALL orxObject_RemoveShader(orxOBJECT *_pstObject, const orxSTR
   /* Done! */
   return eResult;
 }
+
+/** Removes a shader from an object and its owned children.
+ * @param[in]   _pstObject        Concerned object
+ * @param[in]   _zShaderConfigID  Config ID of the shader to remove
+ */
+orxOBJECT_MAKE_RECURSIVE(RemoveShader, const orxSTRING);
 
 /** Enables an object's shader.
  * @param[in]   _pstObject        Concerned object
@@ -8990,7 +9537,7 @@ orxSTATUS orxFASTCALL orxObject_AddTimeLineTrack(orxOBJECT *_pstObject, const or
   return eResult;
 }
 
-/** Adds a timeline track to an object and its children.
+/** Adds a timeline track to an object and its owned children.
  * @param[in]   _pstObject        Concerned object
  * @param[in]   _zTrackConfigID   Config ID of the timeline track to add
  */
@@ -9024,6 +9571,12 @@ orxSTATUS orxFASTCALL orxObject_RemoveTimeLineTrack(orxOBJECT *_pstObject, const
   return eResult;
 }
 
+/** Removes a timeline track from an object and its owned children.
+ * @param[in]   _pstObject        Concerned object
+ * @param[in]   _zTrackConfigID   Config ID of the timeline track to remove
+ */
+orxOBJECT_MAKE_RECURSIVE(RemoveTimeLineTrack, const orxSTRING);
+
 /** Enables an object's timeline.
  * @param[in]   _pstObject        Concerned object
  * @param[in]   _bEnable          Enable / disable
@@ -9046,7 +9599,8 @@ void orxFASTCALL orxObject_EnableTimeLine(orxOBJECT *_pstObject, orxBOOL _bEnabl
     orxTimeLine_Enable(pstTimeLine, _bEnable);
   }
 
-  /* Done! */
+
+    /* Done! *//* Done! */
   return;
 }
 
@@ -9252,7 +9806,7 @@ orxSTATUS orxFASTCALL orxObject_SetSmoothing(orxOBJECT *_pstObject, orxDISPLAY_S
   return eResult;
 }
 
-/** Sets smoothing for an object and its children.
+/** Sets smoothing for an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _eSmoothing     Smoothing type (enabled, default or none)
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -9382,7 +9936,7 @@ orxSTATUS orxFASTCALL orxObject_SetColor(orxOBJECT *_pstObject, const orxCOLOR *
   return eResult;
 }
 
-/** Sets color of an object and all its children.
+/** Sets color of an object and all its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _pstColor       Color to set, orxNULL to remove any specific color
  */
@@ -9510,7 +10064,7 @@ orxSTATUS orxFASTCALL orxObject_SetRGB(orxOBJECT *_pstObject, const orxVECTOR *_
   return eResult;
 }
 
-/** Sets color of an object and all its children.
+/** Sets color of an object and all its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _pvRGB          RGB values to set
  */
@@ -9569,7 +10123,7 @@ orxSTATUS orxFASTCALL orxObject_SetAlpha(orxOBJECT *_pstObject, orxFLOAT _fAlpha
   return eResult;
 }
 
-/** Sets alpha of an object and all its children.
+/** Sets alpha of an object and all its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _fAlpha         Alpha value to set
  */
@@ -9687,7 +10241,7 @@ orxSTATUS orxFASTCALL orxObject_SetBlendMode(orxOBJECT *_pstObject, orxDISPLAY_B
   return eResult;
 }
 
-/** Sets blend mode of an object and its children.
+/** Sets blend mode of an object and its owned children.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _eBlendMode     Blend mode (alpha, multiply, add or none)
  * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
@@ -9761,6 +10315,89 @@ orxDISPLAY_BLEND_MODE orxFASTCALL orxObject_GetBlendMode(const orxOBJECT *_pstOb
   return eResult;
 }
 
+/** Sets object literal lifetime.
+ * @param[in]   _pstObject      Concerned object
+ * @param[in]   _zLifeTime      Lifetime to set, can be composed of multiple tags, separated by space: anim, child, fx, sound, spawner and track
+ * @return      orxSTATUS_SUCCESS / orxSTATUS_FAILURE
+ */
+orxSTATUS orxFASTCALL orxObject_SetLiteralLifeTime(orxOBJECT *_pstObject, const orxSTRING _zLifeTime)
+{
+  orxCHAR   acBuffer[128];
+  orxU32    u32Flags = orxOBJECT_KU32_FLAG_NONE;
+  orxSTATUS eResult;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxSTRUCTURE_ASSERT(_pstObject);
+
+  /* Gets lower case value */
+  acBuffer[sizeof(acBuffer) - 1] = orxCHAR_NULL;
+  orxString_LowerCase(orxString_NCopy(acBuffer, _zLifeTime, sizeof(acBuffer) - 1));
+
+  /* FX? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_FX) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_FX_LIFETIME;
+  }
+
+  /* Sound? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_SOUND) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_SOUND_LIFETIME;
+  }
+
+  /* Spawn? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_SPAWN) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_SPAWNER_LIFETIME;
+  }
+
+  /* Track? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_TRACK) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_TIMELINE_LIFETIME;
+  }
+
+  /* Child? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_CHILD) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_CHILDREN_LIFETIME;
+  }
+
+  /* Anim? */
+  if(orxString_SearchString(acBuffer, orxOBJECT_KZ_ANIM) != orxNULL)
+  {
+    /* Updates flags */
+    u32Flags |= orxOBJECT_KU32_FLAG_ANIM_LIFETIME;
+  }
+
+  /* Has flags? */
+  if(orxFLAG_TEST(u32Flags, orxOBJECT_KU32_MASK_STRUCTURE_LIFETIME))
+  {
+    /* Clears previous lifetime */
+    orxObject_SetLifeTime(_pstObject, -orxFLOAT_1);
+
+    /* Applies them */
+    orxStructure_SetFlags(_pstObject, u32Flags, orxOBJECT_KU32_MASK_STRUCTURE_LIFETIME);
+
+    /* Updates result */
+    eResult = orxSTATUS_SUCCESS;
+  }
+  else
+  {
+    /* Updates result */
+    eResult = orxSTATUS_FAILURE;
+  }
+
+  /* Done! */
+  return eResult;
+}
+
 /** Sets object lifetime.
  * @param[in]   _pstObject      Concerned object
  * @param[in]   _fLifeTime      Lifetime to set, negative value to disable it
@@ -9787,6 +10424,52 @@ orxSTATUS orxFASTCALL orxObject_SetLifeTime(orxOBJECT *_pstObject, orxFLOAT _fLi
   {
     /* Updates status */
     orxStructure_SetFlags(_pstObject, orxOBJECT_KU32_FLAG_NONE, orxOBJECT_KU32_FLAG_HAS_LIFETIME | orxOBJECT_KU32_FLAG_DEATH_ROW);
+  }
+
+  /* Should die? */
+  if(_fLifeTime == orxFLOAT_0)
+  {
+    /* Isn't already part of the enable list? */
+    if(orxLinkList_GetList(&(_pstObject->stEnableNode)) == orxNULL)
+    {
+      orxOBJECT_LISTS *pstGroupLists;
+
+      /* Adds it to enable list */
+      orxLinkList_AddEnd(&(sstObject.stEnableList), &(_pstObject->stEnableNode));
+
+      /* Is cached group list? */
+      if(_pstObject->stGroupID == sstObject.stCachedGroupID)
+      {
+        /* Gets it */
+        pstGroupLists = sstObject.pstCachedGroupLists;
+      }
+      else
+      {
+        /* Gets group list */
+        pstGroupLists = (orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _pstObject->stGroupID);
+
+        /* Checks */
+        orxASSERT(pstGroupLists != orxNULL);
+
+        /* Caches it */
+        sstObject.pstCachedGroupLists = pstGroupLists;
+        sstObject.stCachedGroupID     = _pstObject->stGroupID;
+      }
+
+      /* Adds object to enable group list */
+      orxLinkList_AddEnd(&(pstGroupLists->stEnableList), &(_pstObject->stEnableGroupNode));
+    }
+  }
+  else
+  {
+    /* Is not enabled and part of the enable lists? */
+    if(!orxStructure_TestFlags(_pstObject, orxOBJECT_KU32_FLAG_ENABLED)
+    && (orxLinkList_GetList(&(_pstObject->stEnableNode)) != orxNULL))
+    {
+      /* Removes it from enable lists */
+      orxLinkList_Remove(&(_pstObject->stEnableNode));
+      orxLinkList_Remove(&(_pstObject->stEnableGroupNode));
+    }
   }
 
   /* Done! */
@@ -9875,9 +10558,9 @@ extern orxDLLAPI orxSTRINGID orxFASTCALL orxObject_GetGroupID(const orxOBJECT *_
  */
 extern orxDLLAPI orxSTATUS orxFASTCALL orxObject_SetGroupID(orxOBJECT *_pstObject, orxSTRINGID _stGroupID)
 {
-  orxLINKLIST **ppstBucket;
-  orxLINKLIST  *pstGroupList;
-  orxSTATUS     eResult = orxSTATUS_SUCCESS;
+  orxOBJECT_LISTS **ppstBucket;
+  orxOBJECT_LISTS  *pstGroupLists;
+  orxSTATUS               eResult = orxSTATUS_SUCCESS;
 
   /* Checks */
   orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
@@ -9889,9 +10572,14 @@ extern orxDLLAPI orxSTATUS orxFASTCALL orxObject_SetGroupID(orxOBJECT *_pstObjec
   {
     orxLinkList_Remove(&(_pstObject->stGroupNode));
   }
+  /* Removes object from its current enable group */
+  if(orxLinkList_GetList(&(_pstObject->stEnableGroupNode)) != orxNULL)
+  {
+    orxLinkList_Remove(&(_pstObject->stEnableGroupNode));
+  }
 
   /* Gets group list bucker*/
-  ppstBucket = (orxLINKLIST **)orxHashTable_Retrieve(sstObject.pstGroupTable, _stGroupID);
+  ppstBucket = (orxOBJECT_LISTS **)orxHashTable_Retrieve(sstObject.pstGroupTable, _stGroupID);
 
   /* Checks */
   orxASSERT(ppstBucket != orxNULL);
@@ -9900,19 +10588,32 @@ extern orxDLLAPI orxSTATUS orxFASTCALL orxObject_SetGroupID(orxOBJECT *_pstObjec
   if(*ppstBucket == orxNULL)
   {
     /* Allocates it */
-    pstGroupList = (orxLINKLIST *)orxBank_Allocate(sstObject.pstGroupBank);
+    pstGroupLists = (orxOBJECT_LISTS *)orxBank_Allocate(sstObject.pstGroupBank);
+
+    /* Checks */
+    orxASSERT(pstGroupLists != orxNULL);
+
+    /* Clears it */
+    orxMemory_Zero(pstGroupLists, sizeof(orxOBJECT_LISTS));
 
     /* Stores it */
-    *ppstBucket = pstGroupList;
+    *ppstBucket = pstGroupLists;
   }
   else
   {
     /* Gets it */
-    pstGroupList = *ppstBucket;
+    pstGroupLists = *ppstBucket;
   }
 
-  /* Adds object to end of list */
-  orxLinkList_AddEnd(pstGroupList, &(_pstObject->stGroupNode));
+  /* Adds object to end of group list */
+  orxLinkList_AddEnd(&(pstGroupLists->stList), &(_pstObject->stGroupNode));
+
+  /* Is enabled? */
+  if(orxStructure_TestFlags(_pstObject, orxOBJECT_KU32_FLAG_ENABLED))
+  {
+    /* Adds object to end of enable group list */
+    orxLinkList_AddEnd(&(pstGroupLists->stEnableList), &(_pstObject->stEnableGroupNode));
+  }
 
   /* Stores group ID */
   _pstObject->stGroupID = _stGroupID;
@@ -9921,15 +10622,15 @@ extern orxDLLAPI orxSTATUS orxFASTCALL orxObject_SetGroupID(orxOBJECT *_pstObjec
   return eResult;
 }
 
-/** Sets group ID of an object and all its children.
+/** Sets group ID of an object and all its owned children.
  * @param[in]   _pstObject      Concerned object
- * @param[in]   _stGroupID     Group ID to set. This is the string ID (see orxString_GetID()) of the object's group name.
+ * @param[in]   _stGroupID      Group ID to set. This is the string ID (see orxString_GetID()) of the object's group name.
  */
 orxOBJECT_MAKE_RECURSIVE(SetGroupID, orxSTRINGID);
 
 /** Gets next object in group.
  * @param[in]   _pstObject      Concerned object, orxNULL to get the first one
- * @param[in]   _stGroupID     Group ID to consider, orxU32_UNDEFINED for all
+ * @param[in]   _stGroupID      Group ID to consider, orxSTRINGID_UNDEFINED for all
  * @return      orxOBJECT / orxNULL
  */
 extern orxDLLAPI orxOBJECT *orxFASTCALL orxObject_GetNext(const orxOBJECT *_pstObject, orxSTRINGID _stGroupID)
@@ -9939,32 +10640,32 @@ extern orxDLLAPI orxOBJECT *orxFASTCALL orxObject_GetNext(const orxOBJECT *_pstO
   /* Checks */
   orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
   orxASSERT((_pstObject == orxNULL) || (orxStructure_GetID((orxSTRUCTURE *)_pstObject) < orxSTRUCTURE_ID_NUMBER));
-  orxASSERT((_pstObject == orxNULL) || (_stGroupID == orxSTRINGID_UNDEFINED) || (orxLinkList_GetList(&(_pstObject->stGroupNode)) == orxHashTable_Get(sstObject.pstGroupTable, _stGroupID)));
+  orxASSERT((_pstObject == orxNULL) || (_stGroupID == orxSTRINGID_UNDEFINED) || (orxLinkList_GetList(&(_pstObject->stGroupNode)) == &(((orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _stGroupID))->stList)));
 
   /* Has group? */
   if(_stGroupID != orxSTRINGID_UNDEFINED)
   {
-    orxLINKLIST *pstGroupList;
+    orxOBJECT_LISTS *pstGroupLists;
 
     /* Is cached one? */
     if(_stGroupID == sstObject.stCachedGroupID)
     {
       /* Gets group list */
-      pstGroupList = sstObject.pstCachedGroupList;
+      pstGroupLists = sstObject.pstCachedGroupLists;
     }
     else
     {
       /* Gets group list */
-      pstGroupList = (orxLINKLIST *)orxHashTable_Get(sstObject.pstGroupTable, _stGroupID);
+      pstGroupLists = (orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _stGroupID);
     }
 
     /* Valid? */
-    if(pstGroupList != orxNULL)
+    if(pstGroupLists != orxNULL)
     {
       orxLINKLIST_NODE *pstNode;
 
       /* Gets node */
-      pstNode = (_pstObject == orxNULL) ? orxLinkList_GetFirst(pstGroupList) : orxLinkList_GetNext(&(_pstObject->stGroupNode));
+      pstNode = (_pstObject == orxNULL) ? orxLinkList_GetFirst(&(pstGroupLists->stList)) : orxLinkList_GetNext(&(_pstObject->stGroupNode));
 
       /* Valid? */
       if(pstNode != orxNULL)
@@ -9979,7 +10680,7 @@ extern orxDLLAPI orxOBJECT *orxFASTCALL orxObject_GetNext(const orxOBJECT *_pstO
       }
 
       /* Caches group list */
-      sstObject.pstCachedGroupList  = pstGroupList;
+      sstObject.pstCachedGroupLists = pstGroupLists;
       sstObject.stCachedGroupID     = _stGroupID;
     }
     else
@@ -9998,11 +10699,96 @@ extern orxDLLAPI orxOBJECT *orxFASTCALL orxObject_GetNext(const orxOBJECT *_pstO
   return pstResult;
 }
 
+/** Gets next enabled object.
+ * @param[in]   _pstObject      Concerned object, orxNULL to get the first one
+ * @param[in]   _stGroupID      Group ID to consider, orxSTRINGID_UNDEFINED for all
+ * @return      orxOBJECT / orxNULL
+ */
+orxOBJECT *orxFASTCALL orxObject_GetNextEnabled(const orxOBJECT *_pstObject, orxSTRINGID _stGroupID)
+{
+  orxOBJECT *pstResult;
+
+  /* Checks */
+  orxASSERT(sstObject.u32Flags & orxOBJECT_KU32_STATIC_FLAG_READY);
+  orxASSERT((_pstObject == orxNULL) || (orxStructure_GetID((orxSTRUCTURE *)_pstObject) < orxSTRUCTURE_ID_NUMBER));
+  orxASSERT((_pstObject == orxNULL) || (_stGroupID == orxSTRINGID_UNDEFINED) || (orxLinkList_GetList(&(_pstObject->stEnableGroupNode)) == &(((orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _stGroupID))->stEnableList)));
+
+  /* Has group? */
+  if(_stGroupID != orxSTRINGID_UNDEFINED)
+  {
+    orxOBJECT_LISTS *pstGroupLists;
+
+    /* Is cached one? */
+    if(_stGroupID == sstObject.stCachedGroupID)
+    {
+      /* Gets group list */
+      pstGroupLists = sstObject.pstCachedGroupLists;
+    }
+    else
+    {
+      /* Gets group list */
+      pstGroupLists = (orxOBJECT_LISTS *)orxHashTable_Get(sstObject.pstGroupTable, _stGroupID);
+    }
+
+    /* Valid? */
+    if(pstGroupLists != orxNULL)
+    {
+      orxLINKLIST_NODE *pstNode;
+
+      /* Gets node */
+      pstNode = (_pstObject == orxNULL) ? orxLinkList_GetFirst(&(pstGroupLists->stEnableList)) : orxLinkList_GetNext(&(_pstObject->stEnableGroupNode));
+
+      /* Valid? */
+      if(pstNode != orxNULL)
+      {
+        /* Updates result */
+        pstResult = orxSTRUCT_GET_FROM_FIELD(orxOBJECT, stEnableGroupNode, pstNode);
+      }
+      else
+      {
+        /* Updates result */
+        pstResult = orxNULL;
+      }
+
+      /* Caches group list */
+      sstObject.pstCachedGroupLists = pstGroupLists;
+      sstObject.stCachedGroupID     = _stGroupID;
+    }
+    else
+    {
+      /* Updates result */
+      pstResult = orxNULL;
+    }
+  }
+  else
+  {
+    orxLINKLIST_NODE *pstNode;
+
+    /* Gets node */
+    pstNode = (_pstObject == orxNULL) ? orxLinkList_GetFirst(&(sstObject.stEnableList)) : orxLinkList_GetNext(&(_pstObject->stEnableNode));
+
+    /* Valid? */
+    if(pstNode != orxNULL)
+    {
+      /* Updates result */
+      pstResult = orxSTRUCT_GET_FROM_FIELD(orxOBJECT, stEnableNode, pstNode);
+    }
+    else
+    {
+      /* Updates result */
+      pstResult = orxNULL;
+    }
+  }
+
+  /* Done! */
+  return pstResult;
+}
+
 /** Picks the first active object with size "under" the given position, within a given group. See
  * orxObject_BoxPick(), orxObject_CreateNeighborList() and orxObject_Raycast for other ways of picking
  * objects.
  * @param[in]   _pvPosition     Position to pick from
- * @param[in]   _stGroupID      Group ID to consider, orxU32_UNDEFINED for all
+ * @param[in]   _stGroupID      Group ID to consider, orxSTRINGID_UNDEFINED for all
  * @return      orxOBJECT / orxNULL
  */
 orxOBJECT *orxFASTCALL orxObject_Pick(const orxVECTOR *_pvPosition, orxSTRINGID _stGroupID)
@@ -10061,7 +10847,7 @@ orxOBJECT *orxFASTCALL orxObject_Pick(const orxVECTOR *_pvPosition, orxSTRINGID 
 /** Picks the first active object with size in contact with the given box, withing a given group. Use
  * orxObject_CreateNeighborList() to get all the objects in the box.
  * @param[in]   _pstBox         Box to use for picking
- * @param[in]   _stGroupID      Group ID to consider, orxU32_UNDEFINED for all
+ * @param[in]   _stGroupID      Group ID to consider, orxSTRINGID_UNDEFINED for all
  * @return      orxOBJECT / orxNULL
  */
 orxOBJECT *orxFASTCALL orxObject_BoxPick(const orxOBOX *_pstBox, orxSTRINGID _stGroupID)

@@ -189,14 +189,13 @@ solution "orxFontGen"
         }
         buildoptions
         {
-            "-mmacosx-version-min=10.9",
             "-stdlib=libc++",
             "-gdwarf-2",
+            "-Wno-unused-function",
             "-Wno-write-strings"
         }
         linkoptions
         {
-            "-mmacosx-version-min=10.9",
             "-stdlib=libc++",
             "-dead_strip"
         }

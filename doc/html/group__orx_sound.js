@@ -4,16 +4,17 @@ var group__orx_sound =
       [ "pstSound", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#a4d5dfe7a57f3ddcf6be0c804e3d0f023", null ],
       [ "stInfo", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#ad09d9ed476407093979ce0038a3db767", null ],
       [ "stPacket", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#a84e438192a0b369699f3d96d510fda17", null ],
-      [ "stStream", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#afbe39fc33032147f7cb6f5561d5da60c", null ],
-      [ "zSoundName", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#a668d783111061ec60e45f34789b46c2b", null ]
+      [ "stStream", "structorx_s_o_u_n_d___e_v_e_n_t___p_a_y_l_o_a_d.html#a206206432909d81b7dd4cf0f3adae79d", null ]
     ] ],
     [ "orxSOUND_STREAM_INFO", "structorx_s_o_u_n_d___s_t_r_e_a_m___i_n_f_o.html", [
       [ "u32ChannelNumber", "structorx_s_o_u_n_d___s_t_r_e_a_m___i_n_f_o.html#aefc4afb14c4305b1b71f1dc1f01b73e6", null ],
-      [ "u32SampleRate", "structorx_s_o_u_n_d___s_t_r_e_a_m___i_n_f_o.html#aeaf73be9cfa8e526e4724e5adca203b9", null ]
+      [ "u32SampleRate", "structorx_s_o_u_n_d___s_t_r_e_a_m___i_n_f_o.html#aeaf73be9cfa8e526e4724e5adca203b9", null ],
+      [ "zName", "structorx_s_o_u_n_d___s_t_r_e_a_m___i_n_f_o.html#a4cc25821159adf73337e335d4ef80dfd", null ]
     ] ],
     [ "orxSOUND_STREAM_PACKET", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html", [
       [ "as16SampleList", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#a658158c820d64531fda54286dbff2ba6", null ],
       [ "bDiscard", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#a9837eb0a997a38c058993930766f79f2", null ],
+      [ "bLast", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#acc58ae40445146c2e126193661ed3e03", null ],
       [ "fTime", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#a4fd28f3ef67bdc1ab755b030121b9407", null ],
       [ "fTimeStamp", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#a739d907a4b2e81877b6c1a5d4b052dc6", null ],
       [ "s32ID", "structorx_s_o_u_n_d___s_t_r_e_a_m___p_a_c_k_e_t.html#acd885d48fd72357b40c0d19a48ef03f0", null ],

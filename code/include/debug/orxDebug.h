@@ -1,6 +1,6 @@
 /* Orx - Portable Game Engine
  *
- * Copyright (c) 2008-2020 Orx-Project
+ * Copyright (c) 2008-2021 Orx-Project
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -164,7 +164,7 @@ typedef orxSTATUS (orxFASTCALL *orxDEBUG_CALLBACK_FUNCTION)(orxDEBUG_LEVEL _eLev
     u32DebugFlags = _orxDebug_GetFlags();                                                                         \
     _orxDebug_SetFlags(orxDEBUG_KU32_STATIC_FLAG_CONSOLE,                                                         \
                        orxDEBUG_KU32_STATIC_FLAG_FILE                                                             \
-                       orxDEBUG_KU32_STATIC_FLAG_TERMINAL);                                                       \
+                      |orxDEBUG_KU32_STATIC_FLAG_TERMINAL);                                                       \
     _orxDebug_Log(orxDEBUG_LEVEL_LOG, (const orxSTRING)__FUNCTION__, __FILE__, __LINE__, STRING, ##__VA_ARGS__);  \
     _orxDebug_SetFlags(u32DebugFlags, orxDEBUG_KU32_STATIC_MASK_USER_ALL);                                        \
   } while(orxFALSE)
@@ -209,7 +209,7 @@ typedef orxSTATUS (orxFASTCALL *orxDEBUG_CALLBACK_FUNCTION)(orxDEBUG_LEVEL _eLev
       u32DebugFlags = _orxDebug_GetFlags();                                                                       \
       _orxDebug_SetFlags(orxDEBUG_KU32_STATIC_FLAG_CONSOLE,                                                       \
                          orxDEBUG_KU32_STATIC_FLAG_FILE                                                           \
-                         orxDEBUG_KU32_STATIC_FLAG_TERMINAL);                                                     \
+                        |orxDEBUG_KU32_STATIC_FLAG_TERMINAL);                                                     \
       _orxDebug_Log(orxDEBUG_LEVEL_LOG, (const orxSTRING)__FUNCTION__, __FILE__, __LINE__, STRING, __VA_ARGS__);  \
       _orxDebug_SetFlags(u32DebugFlags, orxDEBUG_KU32_STATIC_MASK_USER_ALL);                                      \
     } while(orxFALSE)

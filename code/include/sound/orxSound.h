@@ -1,6 +1,6 @@
 /* Orx - Portable Game Engine
  *
- * Copyright (c) 2008-2020 Orx-Project
+ * Copyright (c) 2008-2021 Orx-Project
  *
  * This software is provided 'as-is', without any express or implied
  * warranty. In no event will the authors be held liable for any damages
@@ -99,8 +99,9 @@ typedef enum __orxSOUND_EVENT_t
  */
 typedef struct __orxSOUND_STREAM_INFO_t
 {
-  orxU32    u32SampleRate;                    /**< The sample rate, e.g. 44100 Hertz : 4 */
-  orxU32    u32ChannelNumber;                 /**< Number of channels, either mono (1) or stereo (2) : 8 */
+  const orxSTRING zName;                      /**< Stream name : 4 */
+  orxU32          u32SampleRate;              /**< The sample rate, e.g. 44100 Hertz : 8 */
+  orxU32          u32ChannelNumber;           /**< Number of channels, either mono (1) or stereo (2) : 12 */
 
 } orxSOUND_STREAM_INFO;
 
@@ -110,10 +111,11 @@ typedef struct __orxSOUND_STREAM_PACKET_t
 {
   orxU32    u32SampleNumber;                  /**< Number of samples contained in this packet : 4 */
   orxS16   *as16SampleList;                   /**< List of samples for this packet : 8 */
-  orxBOOL   bDiscard;                         /**< Write/play the packet? : 12 */
-  orxFLOAT  fTimeStamp;                       /**< Packet's timestamp : 16 */
+  orxFLOAT  fTimeStamp;                       /**< Packet's timestamp : 12 */
+  orxFLOAT  fTime;                            /**< Packet's time (cursor/play position): 16 */
   orxS32    s32ID;                            /**< Packet's ID : 20 */
-  orxFLOAT  fTime;                            /**< Packet's time (cursor/play position): 24 */
+  orxBOOL   bDiscard;                         /**< Write/play the packet? : 24 */
+  orxBOOL   bLast;                            /**< Last packet before end of stream? : 28 */
 
 } orxSOUND_STREAM_PACKET;
 
@@ -121,17 +123,13 @@ typedef struct __orxSOUND_STREAM_PACKET_t
  */
 typedef struct __orxSOUND_EVENT_PAYLOAD_t
 {
-  union
-  {
-    orxSOUND                   *pstSound;     /**< Sound reference : 4 */
+  orxSOUND                   *pstSound;     /**< Sound reference : 4 */
 
-    struct
-    {
-      const orxSTRING           zSoundName;   /**< Sound name : 4 */
-      orxSOUND_STREAM_INFO      stInfo;       /**< Sound record info : 12 */
-      orxSOUND_STREAM_PACKET    stPacket;     /**< Sound record packet : 32 */
-    } stStream;
-  };                                          /**< Stream : 32 */
+  struct
+  {
+    orxSOUND_STREAM_INFO      stInfo;       /**< Sound record info : 12 */
+    orxSOUND_STREAM_PACKET    stPacket;     /**< Sound record packet : 36 */
+  } stStream;
 
 } orxSOUND_EVENT_PAYLOAD;
 

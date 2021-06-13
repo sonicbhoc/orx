@@ -65,6 +65,12 @@ newoption
     description = "Split target folders based on platforms"
 }
 
+newoption
+{
+    trigger = "gles",
+    description = "Use OpenGL ES instead of OpenGL (Linux only)"
+}
+
 if os.is ("macosx") then
     osname = "mac"
 else
@@ -98,7 +104,8 @@ solution "orx"
     includedirs
     {
         "../include",
-        "../../extern/dlmalloc",
+        "../../extern/rpmalloc/rpmalloc",
+        "../../extern/xxHash",
         "../../extern/glfw-3/include",
         "../../extern/LiquidFun-1.1.0/include",
         "../../extern/stb_image",
@@ -196,14 +203,13 @@ solution "orx"
         {
             "-x c++",
             "-gdwarf-2",
+            "-Wno-unused-function",
             "-Wno-write-strings",
             "-fvisibility-inlines-hidden",
-            "-mmacosx-version-min=10.9",
             "-stdlib=libc++"
         }
         linkoptions
         {
-            "-mmacosx-version-min=10.9",
             "-stdlib=libc++",
             "-dead_strip"
         }
@@ -327,16 +333,16 @@ project "orx"
 
     configuration {"linux"}
         linkoptions {"-Wl,-rpath ./", "-Wl,--export-dynamic"}
-
-    configuration {"linux", "*Core*"}
-        linkoptions {"-Wl,--no-whole-archive"}
         links
         {
             "dl",
             "m",
-            "rt",
-            "pthread"
+            "rt"
         }
+
+    configuration {"linux", "*Core*"}
+        linkoptions {"-Wl,--no-whole-archive"}
+        links {"pthread"}
 
     -- This prevents an optimization bug from happening with some versions of gcc on linux
     configuration {"linux", "not *Debug*"}
@@ -382,7 +388,8 @@ project "orxLIB"
     {
         "../src/**.cpp",
         "../src/**.c",
-        "../include/**.h"
+        "../include/**.h",
+        "../include/**.inc"
     }
 
     excludes {"../src/main/orxMain.c"}
@@ -446,7 +453,6 @@ project "orxLIB"
             "glfw3",
             "openal",
             "sndfile",
-            "GL",
             "X11",
             "Xrandr",
             "dl",
@@ -455,6 +461,12 @@ project "orxLIB"
             "pthread",
             "gcc"
         }
+        if _OPTIONS["gles"] then
+            defines {"__orxDISPLAY_OPENGL_ES__"}
+            links {"GLESv3"}
+        else
+            links {"GL"}
+        end
 
     configuration {"linux", "*Core*"}
         buildoptions {"-fPIC"}
@@ -565,6 +577,9 @@ project "orxLIB"
 
     configuration {"windows", "vs*"}
         buildoptions {"/wd\"4577\""}
+
+    configuration {"windows", "not vs*"}
+        defines {"_WIN32_WINNT=_WIN32_WINNT_VISTA"}
 
     configuration {"windows", "not *Core*"}
         postbuildcommands {"cmd /c copy /Y " .. path.translate(copybase, "\\") .. "\\lib\\dynamic\\orx*.dll " .. path.translate(copybase, "\\") .. "\\bin"}
